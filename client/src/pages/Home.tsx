@@ -12,7 +12,7 @@ const HOLD_DURATION = 900; // 15 minutes in seconds
 const INSTAPAY_LINK = 'https://ipn.eg/S/h.shimi/instapay/1IXe5g';
 const SUPPORT_EMAIL = 'hamdielshimi@gmail.com';
 const HERO_IMAGE = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663340831653/2Ktp4TNevcqWNNpdcRjkGW/peter-pan-hero-bg-LQ9yMucFTHQFuH579545zp.webp';
-const GAS_URL = 'https://script.google.com/macros/d/YOUR_SCRIPT_ID/usercache/v1'; // Replace with actual URL
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbx-_cUJZdu9ZSNvkyCDh3WA3DjCtzFLlT86FwiMcgllcrkhnBH1YoUXqSC4AfRf4-tT/exec';
 
 // Types
 interface Seat {

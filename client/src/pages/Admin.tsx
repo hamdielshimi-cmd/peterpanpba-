@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { MessageCircle } from 'lucide-react';
 
 const ADMIN_PASSWORD = 'peterpan2025';
-const GAS_URL = 'https://script.google.com/macros/d/YOUR_SCRIPT_ID/usercache/v1'; // Replace with actual URL
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbx-_cUJZdu9ZSNvkyCDh3WA3DjCtzFLlT86FwiMcgllcrkhnBH1YoUXqSC4AfRf4-tT/exec';
 
 interface BookingResult {
   code: string;
