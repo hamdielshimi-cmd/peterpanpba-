@@ -4,16 +4,15 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { MessageCircle, Mail, Upload } from 'lucide-react';
+import { useLocation } from 'wouter';
 
 // Constants
-const TICKET_PRICE = 350; // EGP per seat
-const HOLD_DURATION = 600; // 10 minutes in seconds
-const EXTENSION_DURATION = 300; // 5 minutes in seconds
-const LOCK_DURATION = 1800; // 30 minutes in seconds
+const TICKET_PRICE = 500; // EGP per seat (updated from 350)
+const HOLD_DURATION = 900; // 15 minutes in seconds
 const INSTAPAY_LINK = 'https://ipn.eg/S/h.shimi/instapay/1IXe5g';
-const WHATSAPP_NUMBER = '201000305053';
 const SUPPORT_EMAIL = 'hamdielshimi@gmail.com';
 const HERO_IMAGE = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663340831653/2Ktp4TNevcqWNNpdcRjkGW/peter-pan-hero-bg-LQ9yMucFTHQFuH579545zp.webp';
+const GAS_URL = 'https://script.google.com/macros/d/YOUR_SCRIPT_ID/usercache/v1'; // Replace with actual URL
 
 // Types
 interface Seat {
@@ -22,9 +21,18 @@ interface Seat {
   state: 'available' | 'selected' | 'held' | 'booked';
 }
 
+interface BookingResponse {
+  success: boolean;
+  code?: string;
+  totalPrice?: number;
+  totalSeats?: number;
+  whatsappLink?: string;
+  error?: string;
+}
+
 // Utility functions
-const generateSessionToken = () => {
-  return Math.random().toString(36).substring(2, 10).toUpperCase();
+const generateBookingCode = () => {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
 };
 
 const formatTime = (seconds: number) => {
@@ -33,29 +41,14 @@ const formatTime = (seconds: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-const getTimerColor = (seconds: number) => {
-  if (seconds <= 120) return '#8B2C3B';
-  if (seconds <= 300) return '#D97706';
-  return '#14B8A6';
-};
-
-// Initialize test data
+// Initialize seats with right-to-left numbering (seat 1 on right, seat 22 on left)
 const initializeSeats = (): Seat[] => {
   const seats: Seat[] = [];
   const rows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'];
   
   for (const row of rows) {
     for (let i = 1; i <= 22; i++) {
-      let state: 'available' | 'held' | 'booked' = 'available';
-      
-      // Pre-populate test data
-      if (['C', 'D', 'E', 'F'].includes(row) && i <= 8) {
-        state = 'held';
-      } else if (['A', 'B'].includes(row) && i <= 4) {
-        state = 'booked';
-      }
-      
-      seats.push({ row, number: i, state });
+      seats.push({ row, number: i, state: 'available' });
     }
   }
   
@@ -63,737 +56,668 @@ const initializeSeats = (): Seat[] => {
 };
 
 export default function Home() {
-  // Phase state
-  const [phase, setPhase] = useState<1 | 2 | 3 | 4>(1);
+  const [location] = useLocation();
+  
+  // Extract show number from URL (e.g., /show1 → 1)
+  const showNumber = location.match(/show(\d+)/)?.[1] || '1';
+  
+  // Phase state: 1 = hero, 2 = seating + form, 3 = payment
+  const [phase, setPhase] = useState<1 | 2 | 3>(1);
   
   // Seating state
   const [seats, setSeats] = useState<Seat[]>(initializeSeats());
   const [selectedSeats, setSelectedSeats] = useState<Seat[]>([]);
+  const [confirmedSeats, setConfirmedSeats] = useState<string[]>([]);
+  const [pendingSeats, setPendingSeats] = useState<string[]>([]);
   
   // Booking form state
-  const [leadBookerName, setLeadBookerName] = useState('');
-  const [whatsappNumber, setWhatsappNumber] = useState('');
-  const [guestNames, setGuestNames] = useState<string[]>([]);
+  const [phone, setPhone] = useState('');
+  const [primaryGuest, setPrimaryGuest] = useState('');
+  const [companionNames, setCompanionNames] = useState<string[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<'InstaPay' | 'Cash'>('InstaPay');
   
-  // Hold timer state
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const [isHoldActive, setIsHoldActive] = useState(false);
-  const [sessionToken, setSessionToken] = useState('');
-  const [extensionUsed, setExtensionUsed] = useState(false);
-  const [isLocked, setIsLocked] = useState(false);
-  const [lockTimeRemaining, setLockTimeRemaining] = useState(0);
-  
-  // Payment modal state
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  // Payment state
+  const [bookingCode, setBookingCode] = useState('');
+  const [totalPrice, setTotalPrice] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState(HOLD_DURATION);
   const [paymentTabOpened, setPaymentTabOpened] = useState(false);
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [bookingConfirmed, setBookingConfirmed] = useState(false);
+  const [whatsappLink, setWhatsappLink] = useState('');
+  
+  // Loading state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [seatError, setSeatError] = useState('');
 
-  // Check for existing lock on mount
+  // Poll seat availability every 30 seconds
   useEffect(() => {
-    const storedLockExpiration = localStorage.getItem('lockExpiration');
-    const storedSessionToken = localStorage.getItem('sessionToken');
-    
-    if (storedLockExpiration) {
-      const lockExpiration = parseInt(storedLockExpiration);
-      const now = Date.now();
-      
-      if (now < lockExpiration) {
-        setIsLocked(true);
-        setSessionToken(storedSessionToken || '');
-        setLockTimeRemaining(Math.ceil((lockExpiration - now) / 1000));
-      } else {
-        localStorage.removeItem('lockExpiration');
-        localStorage.removeItem('sessionToken');
+    const pollSeats = async () => {
+      try {
+        const response = await fetch(`${GAS_URL}?show=${showNumber}`);
+        const data = await response.json();
+        setConfirmedSeats(data.confirmed || []);
+        setPendingSeats(data.pending || []);
+        
+        // Update seat states
+        setSeats(prevSeats => prevSeats.map(seat => {
+          const seatLabel = `${seat.row}${seat.number}`;
+          if (data.confirmed?.includes(seatLabel)) return { ...seat, state: 'booked' };
+          if (data.pending?.includes(seatLabel)) return { ...seat, state: 'held' };
+          return { ...seat, state: 'available' };
+        }));
+      } catch (error) {
+        console.error('Failed to poll seats:', error);
       }
-    }
-  }, []);
+    };
 
-  // Lock timer countdown
-  useEffect(() => {
-    if (!isLocked || lockTimeRemaining <= 0) return;
-    
-    const timer = setInterval(() => {
-      setLockTimeRemaining(prev => {
-        if (prev <= 1) {
-          setIsLocked(false);
-          localStorage.removeItem('lockExpiration');
-          localStorage.removeItem('sessionToken');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    
-    return () => clearInterval(timer);
-  }, [isLocked, lockTimeRemaining]);
+    pollSeats();
+    const interval = setInterval(pollSeats, 30000);
+    return () => clearInterval(interval);
+  }, [showNumber]);
 
   // Hold timer countdown
   useEffect(() => {
-    if (!isHoldActive || timeRemaining <= 0) return;
+    if (phase !== 3 || timeRemaining <= 0) return;
     
     const timer = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          // Hold expired - enter locked state
-          const token = sessionToken;
-          const lockExpiration = Date.now() + LOCK_DURATION * 1000;
-          localStorage.setItem('lockExpiration', lockExpiration.toString());
-          localStorage.setItem('sessionToken', token);
-          
-          setIsHoldActive(false);
-          setIsLocked(true);
-          setLockTimeRemaining(LOCK_DURATION);
-          setPhase(1);
-          
-          toast.error('Your booking session has expired. Please try again after the lock period.');
-          return 0;
-        }
-        return prev - 1;
-      });
+      setTimeRemaining(prev => prev - 1);
     }, 1000);
     
     return () => clearInterval(timer);
-  }, [isHoldActive, timeRemaining, sessionToken]);
+  }, [phase, timeRemaining]);
 
   // Handle seat click
   const handleSeatClick = (seat: Seat) => {
     if (seat.state === 'held' || seat.state === 'booked') return;
     
+    setSeatError('');
+    
     if (seat.state === 'selected') {
       setSelectedSeats(selectedSeats.filter(s => s !== seat));
       setSeats(seats.map(s => s === seat ? { ...s, state: 'available' } : s));
-      setGuestNames(guestNames.slice(0, selectedSeats.length - 2));
+      setCompanionNames(companionNames.slice(0, selectedSeats.length - 2));
     } else {
       setSelectedSeats([...selectedSeats, seat]);
       setSeats(seats.map(s => s === seat ? { ...s, state: 'selected' } : s));
-      setGuestNames([...guestNames, '']);
+      if (selectedSeats.length > 0) {
+        setCompanionNames([...companionNames, '']);
+      }
     }
   };
 
-  // Handle hold seats
-  const handleHoldSeats = () => {
-    if (!leadBookerName.trim() || !whatsappNumber.trim() || selectedSeats.length === 0) {
+  // Handle booking submission
+  const handleSubmitBooking = async () => {
+    if (!phone.trim() || !primaryGuest.trim() || selectedSeats.length === 0) {
       toast.error('Please fill all required fields');
       return;
     }
-    
-    if (whatsappNumber.replace(/\D/g, '').length < 10) {
-      toast.error('WhatsApp number must be at least 10 digits');
+
+    if (phone.replace(/\D/g, '').length < 10) {
+      toast.error('Phone number must be at least 10 digits');
       return;
     }
-    
-    if (guestNames.some(name => !name.trim())) {
-      toast.error('Please fill all guest names');
+
+    if (companionNames.some(name => !name.trim())) {
+      toast.error('Please fill all companion names');
       return;
     }
-    
-    const token = generateSessionToken();
-    setSessionToken(token);
-    setTimeRemaining(HOLD_DURATION);
-    setIsHoldActive(true);
-    setExtensionUsed(false);
-    setPhase(3);
-    
-    // Mark seats as held
-    setSeats(seats.map(s => 
-      selectedSeats.includes(s) ? { ...s, state: 'held' } : s
-    ));
-  };
 
-  // Handle extension
-  const handleExtension = () => {
-    setTimeRemaining(EXTENSION_DURATION);
-    setExtensionUsed(true);
-  };
-
-  // Handle payment tab
-  const handlePaymentTab = () => {
-    window.open(INSTAPAY_LINK, '_blank');
-    setPaymentTabOpened(true);
-  };
-
-  // Handle receipt upload
-  const handleReceiptUpload = (file: File | null) => {
-    if (!file) return;
+    setIsSubmitting(true);
     
-    const validTypes = ['image/png', 'image/jpeg'];
-    if (!validTypes.includes(file.type)) {
-      toast.error('Only PNG and JPG files are allowed');
-      return;
+    try {
+      // Sort selected seats for consistent ordering
+      const sortedSeats = [...selectedSeats].sort((a, b) => {
+        if (a.row !== b.row) return a.row.localeCompare(b.row);
+        return a.number - b.number;
+      });
+
+      // Build seat-guest pairs
+      const seatGuestPairs = [
+        { seat: `${sortedSeats[0].row}${sortedSeats[0].number}`, guest: primaryGuest },
+        ...companionNames.map((name, idx) => ({
+          seat: `${sortedSeats[idx + 1].row}${sortedSeats[idx + 1].number}`,
+          guest: name
+        }))
+      ];
+
+      // Send to Google Apps Script
+      const response = await fetch(GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submit',
+          showNumber: parseInt(showNumber),
+          primaryGuest,
+          phone,
+          paymentMethod,
+          seatGuestPairs
+        })
+      });
+
+      const result: BookingResponse = await response.json();
+
+      if (!result.success) {
+        setSeatError(result.error || 'Booking failed. Some seats may have been taken.');
+        toast.error('Booking failed');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Success - move to payment phase
+      setBookingCode(result.code || generateBookingCode());
+      setTotalPrice(result.totalPrice || selectedSeats.length * TICKET_PRICE);
+      setWhatsappLink(result.whatsappLink || '');
+      setTimeRemaining(HOLD_DURATION);
+      setPhase(3);
+      toast.success('Booking saved! Proceeding to payment...');
+    } catch (error) {
+      console.error('Booking error:', error);
+      setSeatError('Network error. Please try again.');
+      toast.error('Failed to submit booking');
+    } finally {
+      setIsSubmitting(false);
     }
-    
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File size must be less than 5MB');
-      return;
-    }
-    
-    setReceiptFile(file);
-    toast.success('Receipt uploaded successfully');
   };
 
-  // Handle booking confirmation
-  const handleConfirmBooking = async () => {
-    if (!receiptFile) {
-      toast.error('Please upload receipt');
-      return;
-    }
-    
-    // Simulate submission to Google Sheets
-    setBookingConfirmed(true);
-    setIsHoldActive(false);
-    toast.success('Booking confirmed! Verification in progress.');
-  };
-
-  // Render phase 1: Hero
-  if (phase === 1 && !isLocked) {
+  // Phase 1: Hero
+  if (phase === 1) {
     return (
-      <div className="min-h-screen relative overflow-hidden">
-        {/* Hero Background */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO_IMAGE})` }}
-        >
-          <div style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)' }} className="absolute inset-0"></div>
+      <div
+        style={{
+          minHeight: '100vh',
+          backgroundImage: `url(${HERO_IMAGE})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          position: 'relative'
+        }}
+      >
+        <div style={{ textAlign: 'center', color: 'white', zIndex: 10 }}>
+          <h1 style={{ fontSize: '64px', fontFamily: 'Cormorant Garamond', fontWeight: 'bold', color: '#C9A84C', marginBottom: '20px' }}>
+            Peter Pan Ballet Gala
+          </h1>
+          <p style={{ fontSize: '20px', marginBottom: '40px', maxWidth: '600px', margin: '0 auto 40px' }}>
+            Experience the magic of Neverland. Reserve your premium seat for an unforgettable evening.
+          </p>
+          <Button
+            onClick={() => setPhase(2)}
+            style={{
+              backgroundColor: '#C9A84C',
+              color: '#1A0911',
+              padding: '16px 40px',
+              fontSize: '18px',
+              fontWeight: 'bold',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            RESERVE YOUR SEAT →
+          </Button>
         </div>
-        
-        {/* Hero Content */}
-        <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4">
-          <div className="text-center max-w-2xl">
-            <h1 
-              style={{ fontFamily: 'Cormorant Garamond, serif', color: '#C9A84C' }}
-              className="text-6xl md:text-8xl font-bold mb-6 tracking-wide"
-            >
-              Peter Pan Ballet Gala
-            </h1>
-            <p style={{ color: '#F5F0EB' }} className="text-xl md:text-2xl mb-12 font-light">
-              Experience the magic of Neverland. Reserve your premium seat for an unforgettable evening.
-            </p>
-            <button
-              onClick={() => setPhase(2)}
-              style={{ backgroundColor: '#C9A84C', color: '#1A0911', borderColor: '#C9A84C' }}
-              className="px-8 py-6 text-lg rounded-lg border-2 font-semibold hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95"
-            >
-              RESERVE YOUR SEAT →
-            </button>
-          </div>
-        </div>
-        
-        {/* Floating WhatsApp Button */}
+
+        {/* WhatsApp button - BOTTOM LEFT */}
         <a
-          href={`https://wa.me/${WHATSAPP_NUMBER}?text=Hi, I need help with seat booking`}
+          href={`https://wa.me/201000305053?text=Hi, I need help with seat booking`}
           target="_blank"
           rel="noopener noreferrer"
-          className="fixed bottom-8 right-8 z-50 bg-green-500 hover:bg-green-600 text-white rounded-full p-4 shadow-lg transition-transform hover:scale-110"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            left: '24px',
+            width: '56px',
+            height: '56px',
+            backgroundColor: '#25D366',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            zIndex: 50,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+          }}
         >
-          <MessageCircle size={24} />
+          <MessageCircle size={28} color="white" />
         </a>
       </div>
     );
   }
 
-  // Render phase 2: Seating
+  // Phase 2: Seating + Form
   if (phase === 2) {
-    const selectedCount = selectedSeats.length;
-    const totalPrice = selectedCount * TICKET_PRICE;
-    const isFormValid = leadBookerName.trim() && whatsappNumber.trim() && selectedCount > 0 && guestNames.every(n => n.trim());
+    const isFormValid = phone.trim() && primaryGuest.trim() && selectedSeats.length > 0 && 
+                       companionNames.every(name => name.trim()) && 
+                       phone.replace(/\D/g, '').length >= 10;
 
     return (
-      <div style={{ backgroundColor: '#1A0911' }} className="min-h-screen py-12 px-4">
-        <div className="max-w-6xl mx-auto">
+      <div style={{ minHeight: '100vh', backgroundColor: '#1A0911', color: '#E5D4C1', padding: '40px 20px' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           {/* Header */}
-          <div className="text-center mb-12">
-            <h2 
-              style={{ fontFamily: 'Cormorant Garamond, serif', color: '#C9A84C' }}
-              className="text-5xl font-bold mb-4"
-            >
-              Select Your Seats
-            </h2>
-            <p style={{ color: '#F5F0EB' }} className="text-lg">Theater Seating Map</p>
-          </div>
+          <h1 style={{ fontSize: '48px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', marginBottom: '10px', textAlign: 'center' }}>
+            Show {showNumber} — Select Your Seats
+          </h1>
+          <p style={{ textAlign: 'center', fontSize: '16px', marginBottom: '40px', color: '#A89968' }}>
+            Theater Seating Map
+          </p>
 
-          {/* Seating Grid */}
-          <div style={{ backgroundColor: '#2A1520' }} className="rounded-lg p-8 mb-12 overflow-x-auto">
-            <div className="inline-block min-w-full">
-              {/* Stage */}
-              <div className="text-center mb-8">
-                <div style={{ borderColor: '#C9A84C' }} className="inline-block border-2 px-8 py-2 rounded">
-                  <span 
-                    style={{ fontFamily: 'Cormorant Garamond, serif', color: '#C9A84C' }}
-                    className="text-xl font-bold tracking-widest"
-                  >
-                    ◆ STAGE ◆
-                  </span>
+          {/* Seating Map */}
+          <div style={{ backgroundColor: '#2D1B24', padding: '30px', borderRadius: '8px', marginBottom: '40px', overflowX: 'auto' }}>
+            {/* Stage */}
+            <div style={{ textAlign: 'center', marginBottom: '30px', fontSize: '18px', color: '#C9A84C', fontWeight: 'bold' }}>
+              ◆ STAGE ◆
+            </div>
+
+            {/* Rows */}
+            {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'].map(row => (
+              <div key={row} style={{ display: 'flex', alignItems: 'center', marginBottom: '12px', justifyContent: 'center', gap: '8px' }}>
+                {/* Left label */}
+                <div style={{ width: '30px', textAlign: 'right', fontSize: '14px', color: '#A89968', fontWeight: 'bold' }}>
+                  {row}
+                </div>
+
+                {/* Seats - REVERSED ORDER (22 to 1, so 1 is on right) */}
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {Array.from({ length: 22 }, (_, i) => {
+                    const seatNum = 22 - i; // Reverse: 22, 21, 20, ..., 1
+                    const seat = seats.find(s => s.row === row && s.number === seatNum);
+                    if (!seat) return null;
+
+                    const isSelected = seat.state === 'selected';
+                    const isHeld = seat.state === 'held';
+                    const isBooked = seat.state === 'booked';
+
+                    let bgColor = '#14B8A6'; // available - teal
+                    let borderColor = '#14B8A6';
+                    let textColor = '#1A0911';
+                    let boxShadow = 'none';
+                    let cursor = 'pointer';
+
+                    if (isSelected) {
+                      bgColor = '#C9A84C'; // selected - gold
+                      borderColor = '#C9A84C';
+                      textColor = '#1A0911';
+                      boxShadow = '0 0 12px rgba(201, 168, 76, 0.6)'; // gold glow
+                    } else if (isHeld) {
+                      bgColor = '#6B5B5B'; // held - gray
+                      borderColor = '#6B5B5B';
+                      textColor = '#E5D4C1';
+                      cursor = 'not-allowed';
+                    } else if (isBooked) {
+                      bgColor = '#8B2C3B'; // booked - dark red
+                      borderColor = '#8B2C3B';
+                      textColor = '#E5D4C1';
+                      cursor = 'not-allowed';
+                    }
+
+                    return (
+                      <button
+                        key={`${row}${seatNum}`}
+                        onClick={() => handleSeatClick(seat)}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          backgroundColor: bgColor,
+                          border: `2px solid ${borderColor}`,
+                          borderRadius: '4px',
+                          color: textColor,
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          cursor,
+                          boxShadow,
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        disabled={isHeld || isBooked}
+                      >
+                        {seatNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Right label */}
+                <div style={{ width: '30px', textAlign: 'left', fontSize: '14px', color: '#A89968', fontWeight: 'bold' }}>
+                  {row}
                 </div>
               </div>
-
-              {/* Rows */}
-              <div className="space-y-4">
-                {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'].map(row => (
-                  <div key={row} className="flex items-center justify-center gap-2">
-                    <span 
-                      style={{ fontFamily: 'Cormorant Garamond, serif', color: '#C9A84C' }}
-                      className="w-8 text-center font-bold"
-                    >
-                      {row}
-                    </span>
-                    <div className="flex gap-1">
-                      {Array.from({ length: 22 }).map((_, i) => {
-                        const seat = seats.find(s => s.row === row && s.number === i + 1)!;
-                        const isSelected = selectedSeats.includes(seat);
-                        
-                        let seatStyle: React.CSSProperties = {};
-                        let seatClass = 'w-6 h-6 rounded text-xs font-bold transition-all border-2';
-                        
-                        if (isSelected) {
-                          seatStyle = { backgroundColor: '#C9A84C', color: '#1A0911', borderColor: '#C9A84C' };
-                          seatClass += ' animate-pulse';
-                        } else if (seat.state === 'held') {
-                          seatStyle = { backgroundColor: '#4B5563', borderColor: '#4B5563', cursor: 'not-allowed' };
-                        } else if (seat.state === 'booked') {
-                          seatStyle = { backgroundColor: '#8B2C3B', borderColor: '#8B2C3B', cursor: 'not-allowed' };
-                        } else {
-                          seatStyle = { borderColor: '#14B8A6' };
-                          seatClass += ' hover:opacity-80';
-                        }
-                        
-                        return (
-                          <button
-                            key={`${row}-${i + 1}`}
-                            onClick={() => handleSeatClick(seat)}
-                            disabled={seat.state === 'held' || seat.state === 'booked'}
-                            style={seatStyle}
-                            className={seatClass}
-                            title={`${row}${i + 1}`}
-                          >
-                            {i + 1}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <span 
-                      style={{ fontFamily: 'Cormorant Garamond, serif', color: '#C9A84C' }}
-                      className="w-8 text-center font-bold"
-                    >
-                      {row}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
 
           {/* Selection Summary */}
-          <div style={{ backgroundColor: '#2A1520' }} className="rounded-lg p-6 mb-8">
-            <p style={{ color: '#F5F0EB' }} className="text-lg">
-              <span style={{ color: '#C9A84C' }} className="font-bold">Selected: {selectedCount} seats</span>
-              {selectedCount > 0 && (
-                <span className="ml-4">· Total: <span style={{ color: '#C9A84C' }} className="font-bold">EGP {totalPrice}</span></span>
-              )}
-            </p>
+          <div style={{ backgroundColor: '#2D1B24', padding: '16px', borderRadius: '8px', marginBottom: '30px', textAlign: 'center', fontSize: '16px', color: '#C9A84C', fontWeight: 'bold' }}>
+            Selected: {selectedSeats.length} seats · Total: EGP {selectedSeats.length * TICKET_PRICE}
           </div>
 
-          {/* Booking Form */}
-          <div style={{ backgroundColor: '#2A1520' }} className="rounded-lg p-8 space-y-6">
-            <div>
-              <label style={{ color: '#F5F0EB' }} className="block mb-2">Lead Booker Name *</label>
-              <Input
-                value={leadBookerName}
-                onChange={(e) => setLeadBookerName(e.target.value)}
-                placeholder="Your full name"
-                style={{ backgroundColor: '#1A0911', borderColor: '#C9A84C', color: '#F5F0EB' }}
-                className="border-2"
-              />
+          {/* Error message */}
+          {seatError && (
+            <div style={{ backgroundColor: '#8B2C3B', color: '#E5D4C1', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' }}>
+              {seatError}
             </div>
+          )}
 
-            <div>
-              <label style={{ color: '#F5F0EB' }} className="block mb-2">WhatsApp Number *</label>
-              <Input
-                value={whatsappNumber}
-                onChange={(e) => setWhatsappNumber(e.target.value)}
-                placeholder="10+ digits"
-                style={{ backgroundColor: '#1A0911', borderColor: '#C9A84C', color: '#F5F0EB' }}
-                className="border-2"
-              />
-            </div>
+          {/* Booking Form - appears after seat selection */}
+          {selectedSeats.length > 0 && (
+            <div style={{ backgroundColor: '#2D1B24', padding: '30px', borderRadius: '8px' }}>
+              <h2 style={{ fontSize: '24px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', marginBottom: '20px' }}>
+                Guest Details
+              </h2>
 
-            {selectedCount > 0 && (
-              <div className="space-y-4">
-                <p style={{ color: '#C9A84C', fontFamily: 'Cormorant Garamond, serif' }} className="font-bold">Guest Names</p>
-                {selectedSeats.map((seat, idx) => (
-                  <div key={idx}>
-                    <label style={{ color: '#F5F0EB' }} className="block mb-2 text-sm">
-                      {idx === 0 ? 'Lead Booker' : `Guest ${idx}`} - Seat {seat.row}{seat.number}
-                    </label>
-                    <Input
-                      value={guestNames[idx] || ''}
-                      onChange={(e) => {
-                        const newNames = [...guestNames];
-                        newNames[idx] = e.target.value;
-                        setGuestNames(newNames);
-                      }}
-                      placeholder="Guest name"
-                      style={{ backgroundColor: '#1A0911', borderColor: '#C9A84C', color: '#F5F0EB' }}
-                      className="border-2"
-                    />
-                  </div>
-                ))}
+              {/* Contact Phone */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold' }}>
+                  Contact Person Phone Number *
+                </label>
+                <Input
+                  type="tel"
+                  placeholder="01XXXXXXXXX"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  style={{
+                    backgroundColor: '#1A0911',
+                    color: '#E5D4C1',
+                    border: '2px solid #C9A84C',
+                    padding: '10px',
+                    borderRadius: '4px',
+                    fontSize: '14px'
+                  }}
+                />
               </div>
-            )}
 
-            <div className="flex gap-4 pt-6">
+              {/* Primary Guest */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold' }}>
+                  Primary Guest Name * — Seat {selectedSeats[0]?.row}{selectedSeats[0]?.number}
+                </label>
+                <Input
+                  placeholder="Guest name"
+                  value={primaryGuest}
+                  onChange={(e) => setPrimaryGuest(e.target.value)}
+                  style={{
+                    backgroundColor: '#1A0911',
+                    color: '#E5D4C1',
+                    border: '2px solid #C9A84C',
+                    padding: '10px',
+                    borderRadius: '4px',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              {/* Companion Names */}
+              {companionNames.map((name, idx) => (
+                <div key={idx} style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold' }}>
+                    Companion {idx + 1} — Seat {selectedSeats[idx + 1]?.row}{selectedSeats[idx + 1]?.number}
+                  </label>
+                  <Input
+                    placeholder="Companion name"
+                    value={name}
+                    onChange={(e) => {
+                      const newNames = [...companionNames];
+                      newNames[idx] = e.target.value;
+                      setCompanionNames(newNames);
+                    }}
+                    style={{
+                      backgroundColor: '#1A0911',
+                      color: '#E5D4C1',
+                      border: '2px solid #C9A84C',
+                      padding: '10px',
+                      borderRadius: '4px',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+              ))}
+
+              {/* Payment Method */}
+              <div style={{ marginBottom: '30px' }}>
+                <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: 'bold' }}>
+                  Payment Method *
+                </label>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="payment"
+                      value="InstaPay"
+                      checked={paymentMethod === 'InstaPay'}
+                      onChange={(e) => setPaymentMethod(e.target.value as 'InstaPay' | 'Cash')}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>💳 InstaPay</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="payment"
+                      value="Cash"
+                      checked={paymentMethod === 'Cash'}
+                      onChange={(e) => setPaymentMethod(e.target.value as 'InstaPay' | 'Cash')}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>💵 Cash</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Submit Button */}
               <Button
-                onClick={() => setPhase(1)}
-                variant="outline"
-                style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-                className="flex-1"
-              >
-                Back
-              </Button>
-              <button
-                onClick={handleHoldSeats}
-                disabled={!isFormValid}
-                style={{ 
-                  backgroundColor: isFormValid ? '#C9A84C' : '#4B5563',
+                onClick={handleSubmitBooking}
+                disabled={!isFormValid || isSubmitting}
+                style={{
+                  width: '100%',
+                  backgroundColor: isFormValid ? '#14B8A6' : '#6B5B5B',
                   color: '#1A0911',
-                  borderColor: '#C9A84C'
+                  padding: '12px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  border: '2px solid #C9A84C',
+                  cursor: isFormValid ? 'pointer' : 'not-allowed',
+                  borderRadius: '4px',
+                  transition: 'all 0.2s ease'
                 }}
-                className="flex-1 px-6 py-2 rounded border-2 font-semibold transition-all hover:shadow-lg disabled:cursor-not-allowed"
               >
-                HOLD MY SEATS
-              </button>
+                {isSubmitting ? 'SUBMITTING...' : 'SUBMIT BOOKING'}
+              </Button>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Floating WhatsApp Button */}
+        {/* WhatsApp button - BOTTOM LEFT */}
         <a
-          href={`https://wa.me/${WHATSAPP_NUMBER}?text=Hi, I need help with seat booking`}
+          href={`https://wa.me/201000305053?text=Hi, I need help with seat booking`}
           target="_blank"
           rel="noopener noreferrer"
-          className="fixed bottom-8 right-8 z-50 bg-green-500 hover:bg-green-600 text-white rounded-full p-4 shadow-lg transition-transform hover:scale-110"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            left: '24px',
+            width: '56px',
+            height: '56px',
+            backgroundColor: '#25D366',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            zIndex: 50,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+          }}
         >
-          <MessageCircle size={24} />
+          <MessageCircle size={28} color="white" />
         </a>
       </div>
     );
   }
 
-  // Render phase 3: Hold Timer
-  if (phase === 3 && isHoldActive) {
-    const timerColor = getTimerColor(timeRemaining);
-    const showExtension = timeRemaining <= 300 && !extensionUsed;
+  // Phase 3: Payment
+  if (phase === 3) {
+    const sortedSeats = [...selectedSeats].sort((a, b) => {
+      if (a.row !== b.row) return a.row.localeCompare(b.row);
+      return a.number - b.number;
+    });
 
     return (
-      <div style={{ backgroundColor: '#1A0911' }} className="min-h-screen py-12 px-4 flex items-center justify-center">
-        <div className="max-w-2xl w-full">
-          {/* Booking Details Card */}
-          <div style={{ backgroundColor: '#2A1520' }} className="rounded-lg p-8 mb-8">
-            <h2 
-              style={{ fontFamily: 'Cormorant Garamond, serif', color: '#C9A84C' }}
-              className="text-3xl font-bold mb-6 text-center"
-            >
-              Your Booking
+      <div style={{ minHeight: '100vh', backgroundColor: '#1A0911', color: '#E5D4C1', padding: '40px 20px' }}>
+        <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+          {/* Booking Summary */}
+          <div style={{ backgroundColor: '#2D1B24', padding: '30px', borderRadius: '8px', marginBottom: '30px', textAlign: 'center' }}>
+            <h2 style={{ fontSize: '24px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', marginBottom: '20px' }}>
+              ✅ Your seats are held for 15 minutes
             </h2>
-            
-            {/* Seats List */}
-            <div className="mb-6 space-y-2">
-              {selectedSeats.map((seat, idx) => (
-                <div 
-                  key={idx} 
-                  style={{ color: '#F5F0EB', borderBottomColor: 'rgba(201, 168, 76, 0.2)' }}
-                  className="flex justify-between border-b pb-2"
-                >
+
+            <div style={{ backgroundColor: '#1A0911', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
+              <p style={{ fontSize: '14px', color: '#A89968', marginBottom: '8px' }}>Booking Code</p>
+              <p style={{ fontSize: '32px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', fontWeight: 'bold', wordBreak: 'break-all' }}>
+                {bookingCode}
+              </p>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(bookingCode);
+                  toast.success('Booking code copied!');
+                }}
+                style={{
+                  marginTop: '12px',
+                  backgroundColor: 'transparent',
+                  border: '1px solid #C9A84C',
+                  color: '#C9A84C',
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px'
+                }}
+              >
+                Copy Code
+              </button>
+            </div>
+
+            {/* Seat List */}
+            <div style={{ textAlign: 'left', backgroundColor: '#1A0911', padding: '16px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' }}>
+              {sortedSeats.map((seat, idx) => (
+                <div key={idx} style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
                   <span>{seat.row}{seat.number}</span>
-                  <span>{guestNames[idx]}</span>
-                  <span style={{ color: '#C9A84C' }}>EGP {TICKET_PRICE}</span>
+                  <span style={{ color: '#A89968' }}>
+                    {idx === 0 ? primaryGuest : companionNames[idx - 1]}
+                  </span>
                 </div>
               ))}
-              <div 
-                style={{ color: '#C9A84C', borderTopColor: 'rgba(201, 168, 76, 0.2)' }}
-                className="flex justify-between font-bold text-lg pt-4 border-t"
-              >
-                <span>Total</span>
-                <span>EGP {selectedSeats.length * TICKET_PRICE} · {selectedSeats.length} Seats</span>
-              </div>
+            </div>
+
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#C9A84C', marginBottom: '20px' }}>
+              Total: EGP {totalPrice}
             </div>
 
             {/* Timer */}
-            <div className="text-center mb-8">
-              <p 
-                style={{ fontFamily: 'Cormorant Garamond, serif', color: timerColor }}
-                className="text-5xl font-bold"
-              >
-                {formatTime(timeRemaining)}
-              </p>
-              <p style={{ color: '#F5F0EB' }} className="text-sm mt-2">Time remaining to complete booking</p>
+            <div style={{ fontSize: '24px', fontFamily: 'Cormorant Garamond', color: timeRemaining <= 120 ? '#8B2C3B' : '#14B8A6', fontWeight: 'bold' }}>
+              {formatTime(timeRemaining)}
             </div>
+          </div>
 
-            {/* Extension Button */}
-            {showExtension && (
-              <button
-                onClick={handleExtension}
-                style={{ backgroundColor: '#14B8A6', color: '#1A0911' }}
-                className="w-full mb-4 py-2 rounded font-bold hover:opacity-90 transition-opacity"
+          {/* Payment Instructions */}
+          {paymentMethod === 'InstaPay' ? (
+            <>
+              <div style={{ backgroundColor: '#2D1B24', padding: '20px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px', lineHeight: '1.8' }}>
+                <p style={{ marginBottom: '12px' }}>
+                  <strong>Payment Instructions:</strong>
+                </p>
+                <ol style={{ marginLeft: '20px', marginBottom: '12px' }}>
+                  <li>Click the button below to open InstaPay</li>
+                  <li>Send EGP {totalPrice} to <strong>h.shimi@instapay</strong></li>
+                  <li>Take a screenshot of your payment receipt</li>
+                  <li>Come back here and click the WhatsApp button below</li>
+                  <li>Send the pre-filled WhatsApp message with your receipt screenshot</li>
+                </ol>
+              </div>
+
+              <Button
+                onClick={() => {
+                  window.open(INSTAPAY_LINK, '_blank');
+                  setPaymentTabOpened(true);
+                }}
+                style={{
+                  width: '100%',
+                  backgroundColor: '#14B8A6',
+                  color: '#1A0911',
+                  padding: '12px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  border: 'none',
+                  cursor: 'pointer',
+                  borderRadius: '4px',
+                  marginBottom: '20px'
+                }}
               >
-                Extend Hold by 5 Minutes
-              </button>
-            )}
+                {paymentTabOpened ? '✓ Payment Tab Opened — Come back here' : 'Pay via InstaPay →'}
+              </Button>
 
-            {extensionUsed && (
-              <div style={{ color: '#14B8A6' }} className="text-center mb-4">
-                ✓ Extension Used
-              </div>
-            )}
-
-            {/* Proceed Button */}
-            <button
-              onClick={() => {
-                setShowPaymentModal(true);
-                setPhase(4);
-              }}
-              style={{ backgroundColor: '#C9A84C', color: '#1A0911', borderColor: '#C9A84C' }}
-              className="w-full py-2 rounded border-2 font-semibold hover:shadow-lg transition-all"
-            >
-              PROCEED TO PAYMENT
-            </button>
-
-            {/* Session ID */}
-            <p style={{ color: '#F5F0EB' }} className="text-center text-xs mt-4">
-              Session ID: {sessionToken}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Render phase 4: Payment Modal
-  if (phase === 4) {
-    return (
-      <div style={{ backgroundColor: '#1A0911' }} className="min-h-screen py-12 px-4">
-        <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
-          <DialogContent 
-            style={{ backgroundColor: '#2A1520', borderColor: '#C9A84C' }}
-            className="max-w-2xl border-2 max-h-[90vh] overflow-y-auto"
-          >
-            {!bookingConfirmed ? (
-              <>
-                <DialogHeader>
-                  <DialogTitle 
-                    style={{ fontFamily: 'Cormorant Garamond, serif', color: '#C9A84C' }}
-                    className="text-2xl font-bold"
-                  >
-                    Your Booking Summary
-                  </DialogTitle>
-                </DialogHeader>
-
-                {/* Booking Summary Table */}
-                <div className="space-y-4">
-                  <table className="w-full text-sm" style={{ color: '#F5F0EB' }}>
-                    <thead>
-                      <tr style={{ borderBottomColor: 'rgba(201, 168, 76, 0.2)' }} className="border-b">
-                        <th style={{ color: '#C9A84C' }} className="text-left py-2">Seat</th>
-                        <th style={{ color: '#C9A84C' }} className="text-left py-2">Guest Name</th>
-                        <th style={{ color: '#C9A84C' }} className="text-right py-2">Price</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedSeats.map((seat, idx) => (
-                        <tr 
-                          key={idx} 
-                          style={{ borderBottomColor: 'rgba(201, 168, 76, 0.1)' }}
-                          className="border-b"
-                        >
-                          <td className="py-2">{seat.row}{seat.number}</td>
-                          <td className="py-2">{guestNames[idx]}</td>
-                          <td className="text-right py-2">EGP {TICKET_PRICE}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  <div 
-                    style={{ color: '#C9A84C', borderTopColor: 'rgba(201, 168, 76, 0.2)' }}
-                    className="flex justify-between text-lg font-bold border-t pt-4"
-                  >
-                    <span>Total</span>
-                    <span>EGP {selectedSeats.length * TICKET_PRICE}</span>
-                  </div>
-                </div>
-
-                {/* Payment Instructions */}
-                <div style={{ backgroundColor: '#1A0911' }} className="rounded-lg p-6 space-y-3 my-6">
-                  <h3 style={{ color: '#C9A84C', fontFamily: 'Cormorant Garamond, serif' }} className="font-bold mb-4">
-                    Payment Instructions
-                  </h3>
-                  <ol style={{ color: '#F5F0EB' }} className="space-y-2 text-sm list-decimal list-inside">
-                    <li>Click "Pay via InstaPay →" button below</li>
-                    <li>Send payment to <span style={{ color: '#C9A84C' }} className="font-bold">h.shimi@instapay</span> via InstaPay</li>
-                    <li>Amount: <span style={{ color: '#C9A84C' }} className="font-bold">EGP {selectedSeats.length * TICKET_PRICE}</span></li>
-                    <li>Wait for payment confirmation from InstaPay</li>
-                    <li>Take screenshot of payment receipt</li>
-                    <li>Upload screenshot in box below to confirm</li>
-                  </ol>
-                </div>
-
-                {/* Warning Box */}
-                <div style={{ borderColor: '#D97706', backgroundColor: 'rgba(217, 119, 6, 0.1)' }} className="border-2 rounded-lg p-4 mb-6">
-                  <p style={{ color: '#F5F0EB' }} className="text-sm">
-                    ⚠ Payment must be completed within 30 minutes. Session ID: <span style={{ color: '#C9A84C' }} className="font-bold">{sessionToken}</span>
-                  </p>
-                  <p style={{ color: '#F5F0EB' }} className="text-xs mt-2">Manual verification will occur within 2 hours</p>
-                </div>
-
-                {/* Payment Button */}
-                <button
-                  onClick={handlePaymentTab}
-                  style={{ backgroundColor: '#C9A84C', color: '#1A0911', borderColor: '#C9A84C' }}
-                  className="w-full py-2 rounded border-2 font-semibold mb-6 hover:shadow-lg transition-all"
-                >
-                  Pay via InstaPay →
-                </button>
-
-                {paymentTabOpened && (
-                  <p style={{ color: '#14B8A6' }} className="text-center text-sm mb-4">✓ Payment Tab Opened</p>
-                )}
-
-                {/* Receipt Upload */}
-                <div className="mb-6">
-                  <label style={{ color: '#F5F0EB' }} className="block mb-3 font-bold">Upload Payment Receipt (Screenshot)</label>
-                  <div 
-                    style={{ borderColor: '#C9A84C' }}
-                    className="border-2 border-dashed rounded-lg p-8 text-center hover:opacity-80 transition-opacity cursor-pointer"
-                    onClick={() => document.getElementById('receipt-input')?.click()}
-                  >
-                    <Upload style={{ color: '#C9A84C' }} className="mx-auto mb-2" size={24} />
-                    <p style={{ color: '#F5F0EB' }} className="text-sm">Drag and drop or click to select</p>
-                    <p style={{ color: '#F5F0EB' }} className="text-xs mt-1">PNG, JPG (Max 5MB)</p>
-                    {receiptFile && (
-                      <div style={{ color: '#14B8A6' }} className="mt-4">
-                        <p className="font-bold">✓ {receiptFile.name}</p>
-                        <p className="text-xs">{(receiptFile.size / 1024 / 1024).toFixed(1)} MB</p>
-                      </div>
-                    )}
-                  </div>
-                  <input
-                    id="receipt-input"
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    onChange={(e) => handleReceiptUpload(e.target.files?.[0] || null)}
-                    className="hidden"
-                  />
-                </div>
-
-                {/* Confirm Button */}
-                <button
-                  onClick={handleConfirmBooking}
-                  disabled={!receiptFile}
-                  style={{ 
-                    backgroundColor: receiptFile ? '#C9A84C' : '#4B5563',
-                    color: '#1A0911',
-                    borderColor: '#C9A84C',
-                    cursor: receiptFile ? 'pointer' : 'not-allowed'
+              {whatsappLink && (
+                <a
+                  href={whatsappLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    backgroundColor: '#25D366',
+                    color: 'white',
+                    padding: '12px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    border: 'none',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                    textAlign: 'center',
+                    textDecoration: 'none',
+                    transition: 'all 0.2s ease'
                   }}
-                  className="w-full py-2 rounded border-2 font-semibold mb-4 hover:shadow-lg transition-all"
                 >
-                  Confirm Booking
-                </button>
-
-                {/* Support Footer */}
-                <div style={{ borderTopColor: 'rgba(201, 168, 76, 0.2)' }} className="border-t pt-4 flex gap-2">
-                  <a
-                    href={`https://wa.me/${WHATSAPP_NUMBER}?text=My session ID is ${sessionToken}. I need help with my booking.`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded text-sm font-bold text-center transition-colors flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle size={16} /> WhatsApp
-                  </a>
-                  <a
-                    href={`mailto:${SUPPORT_EMAIL}?subject=Booking Support - Session ${sessionToken}`}
-                    className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded text-sm font-bold text-center transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Mail size={16} /> Email
-                  </a>
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-12">
-                <h3 style={{ fontFamily: 'Cormorant Garamond, serif', color: '#14B8A6' }} className="text-2xl font-bold mb-4">
-                  ✓ Booking Confirmed
-                </h3>
-                <p style={{ color: '#F5F0EB' }} className="mb-4">Your booking has been submitted. We'll verify payment within 2 hours and send confirmation via WhatsApp.</p>
-                <button
-                  onClick={() => {
-                    setShowPaymentModal(false);
-                    setPhase(1);
-                    setSelectedSeats([]);
-                    setLeadBookerName('');
-                    setWhatsappNumber('');
-                    setGuestNames([]);
-                    setReceiptFile(null);
-                    setPaymentTabOpened(false);
-                    setBookingConfirmed(false);
-                  }}
-                  style={{ backgroundColor: '#C9A84C', color: '#1A0911', borderColor: '#C9A84C' }}
-                  className="px-6 py-2 rounded border-2 font-semibold hover:shadow-lg transition-all"
-                >
-                  Back to Home
-                </button>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-      </div>
-    );
-  }
-
-  // Render locked state
-  if (isLocked) {
-    return (
-      <div style={{ backgroundColor: '#1A0911' }} className="min-h-screen py-12 px-4 flex items-center justify-center">
-        <div style={{ backgroundColor: '#2A1520' }} className="max-w-2xl w-full rounded-lg p-8 text-center">
-          <h2 
-            style={{ fontFamily: 'Cormorant Garamond, serif', color: '#D97706' }}
-            className="text-3xl font-bold mb-4"
-          >
-            Session Locked
-          </h2>
-          <p style={{ color: '#F5F0EB' }} className="mb-6">Your booking session has expired. Support available below.</p>
-          
-          <div 
-            style={{ fontFamily: 'Cormorant Garamond, serif', color: '#D97706' }}
-            className="text-4xl font-bold mb-8"
-          >
-            {formatTime(lockTimeRemaining)}
-          </div>
-
-          <div className="flex gap-4 mb-8">
-            <a
-              href={`https://wa.me/${WHATSAPP_NUMBER}?text=My session ID is ${sessionToken}. I need help with my booking.`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded font-bold transition-colors flex items-center justify-center gap-2"
-            >
-              <MessageCircle size={20} /> WhatsApp
-            </a>
-            <a
-              href={`mailto:${SUPPORT_EMAIL}?subject=Booking Support - Session ${sessionToken}`}
-              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded font-bold transition-colors flex items-center justify-center gap-2"
-            >
-              <Mail size={20} /> Email
-            </a>
-          </div>
-
-          <button
-            onClick={() => window.location.reload()}
-            style={{ borderColor: '#C9A84C', color: '#C9A84C' }}
-            className="w-full py-2 rounded border-2 font-semibold hover:opacity-80 transition-opacity"
-          >
-            Refresh
-          </button>
+                  📲 Send Payment Confirmation on WhatsApp
+                </a>
+              )}
+            </>
+          ) : (
+            <div style={{ backgroundColor: '#2D1B24', padding: '20px', borderRadius: '8px', fontSize: '14px', lineHeight: '1.8' }}>
+              <p style={{ marginBottom: '12px', fontSize: '16px', fontWeight: 'bold', color: '#C9A84C' }}>
+                ✅ Your seats are held for 15 minutes
+              </p>
+              <p style={{ marginBottom: '12px' }}>
+                Please give this code to the receptionist at the front desk:
+              </p>
+              <p style={{ fontSize: '24px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', fontWeight: 'bold', marginBottom: '12px' }}>
+                {bookingCode}
+              </p>
+              <p>
+                They will confirm your booking once you pay cash.
+              </p>
+            </div>
+          )}
         </div>
+
+        {/* WhatsApp button - BOTTOM LEFT */}
+        <a
+          href={`https://wa.me/201000305053?text=Hi, I need help with seat booking`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            left: '24px',
+            width: '56px',
+            height: '56px',
+            backgroundColor: '#25D366',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            zIndex: 50,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+          }}
+        >
+          <MessageCircle size={28} color="white" />
+        </a>
       </div>
     );
   }
