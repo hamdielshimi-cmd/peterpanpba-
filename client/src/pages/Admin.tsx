@@ -48,7 +48,21 @@ export default function Admin() {
 
     setIsSearching(true);
     try {
-      const response = await fetch(`${GAS_URL}?action=search&code=${bookingCode}&show=${showNumber || ''}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(`${GAS_URL}?action=search&code=${bookingCode}&show=${showNumber || ''}`, {
+        signal: controller.signal,
+        mode: 'cors'
+      });
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        toast.error('Service unavailable');
+        setIsSearching(false);
+        return;
+      }
+      
       const result = await response.json();
 
       if (result.success && result.booking) {
@@ -58,7 +72,6 @@ export default function Admin() {
         toast.error('Booking not found');
       }
     } catch (error) {
-      console.error('Search error:', error);
       toast.error('Failed to search booking');
     } finally {
       setIsSearching(false);
@@ -70,6 +83,9 @@ export default function Admin() {
 
     setIsProcessing(true);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
       const response = await fetch(GAS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,8 +93,15 @@ export default function Admin() {
           action: 'confirm',
           code: searchResult.code,
           showNumber: searchResult.showNumber
-        })
+        }),
+        signal: controller.signal,
+        mode: 'cors'
       });
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error('Service unavailable');
+      }
 
       const result = await response.json();
 
@@ -101,6 +124,9 @@ export default function Admin() {
 
     setIsProcessing(true);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
       const response = await fetch(GAS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -108,8 +134,15 @@ export default function Admin() {
           action: 'cancel',
           code: searchResult.code,
           showNumber: searchResult.showNumber
-        })
+        }),
+        signal: controller.signal,
+        mode: 'cors'
       });
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error('Service unavailable');
+      }
 
       const result = await response.json();
 

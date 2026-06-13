@@ -91,12 +91,24 @@ export default function Home() {
   useEffect(() => {
     const pollSeats = async () => {
       try {
-        const response = await fetch(`${GAS_URL}?show=${showNumber}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`${GAS_URL}?show=${showNumber}`, {
+          signal: controller.signal,
+          mode: 'cors'
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          return;
+        }
+        
         const data = await response.json();
         setConfirmedSeats(data.confirmed || []);
         setPendingSeats(data.pending || []);
         
-        // Update seat states
         setSeats(prevSeats => prevSeats.map(seat => {
           const seatLabel = `${seat.row}${seat.number}`;
           if (data.confirmed?.includes(seatLabel)) return { ...seat, state: 'booked' };
@@ -104,7 +116,7 @@ export default function Home() {
           return { ...seat, state: 'available' };
         }));
       } catch (error) {
-        console.error('Failed to poll seats:', error);
+        // Silently fail - app works with local state
       }
     };
 
@@ -179,6 +191,9 @@ export default function Home() {
       ];
 
       // Send to Google Apps Script
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
       const response = await fetch(GAS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -189,8 +204,16 @@ export default function Home() {
           phone,
           paymentMethod,
           seatGuestPairs
-        })
+        }),
+        signal: controller.signal,
+        mode: 'cors'
       });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error('Booking service unavailable');
+      }
 
       const result: BookingResponse = await response.json();
 
