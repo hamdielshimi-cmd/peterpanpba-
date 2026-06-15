@@ -7,7 +7,7 @@ import { MessageCircle, Mail, Upload } from 'lucide-react';
 import { useLocation } from 'wouter';
 
 // Constants
-const TICKET_PRICE = 500; // EGP per seat (updated from 350)
+const TICKET_PRICE = 500; // EGP per seat
 const HOLD_DURATION = 900; // 15 minutes in seconds
 const INSTAPAY_LINK = 'https://ipn.eg/S/h.shimi/instapay/1IXe5g';
 const SUPPORT_EMAIL = 'hamdielshimi@gmail.com';
@@ -28,6 +28,7 @@ interface BookingResponse {
   totalSeats?: number;
   whatsappLink?: string;
   error?: string;
+  message?: string;
 }
 
 // Utility functions
@@ -75,6 +76,7 @@ export default function Home() {
   const [primaryGuest, setPrimaryGuest] = useState('');
   const [companionNames, setCompanionNames] = useState<string[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'InstaPay' | 'Cash'>('InstaPay');
+  const [branch, setBranch] = useState<'MAD' | 'FAM'>('MAD'); // Branch selection
   
   // Payment state
   const [bookingCode, setBookingCode] = useState('');
@@ -130,13 +132,20 @@ export default function Home() {
     if (phase !== 3 || timeRemaining <= 0) return;
     
     const timer = setInterval(() => {
-      setTimeRemaining(prev => prev - 1);
+      setTimeRemaining(prev => {
+        if (prev <= 1) {
+          setPhase(1);
+          toast.error('Hold time expired. Please book again.');
+          return HOLD_DURATION;
+        }
+        return prev - 1;
+      });
     }, 1000);
     
     return () => clearInterval(timer);
   }, [phase, timeRemaining]);
 
-  // Handle seat click
+  // Handle seat selection
   const handleSeatClick = (seat: Seat) => {
     if (seat.state === 'held' || seat.state === 'booked') return;
     
@@ -190,7 +199,7 @@ export default function Home() {
         }))
       ];
 
-      // Send to Google Apps Script
+      // Send to Google Apps Script with branch
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
       
@@ -203,6 +212,7 @@ export default function Home() {
           primaryGuest,
           phone,
           paymentMethod,
+          branch, // Include branch (MAD or FAM)
           seatGuestPairs
         }),
         signal: controller.signal,
@@ -218,7 +228,7 @@ export default function Home() {
       const result: BookingResponse = await response.json();
 
       if (!result.success) {
-        setSeatError(result.error || 'Booking failed. Some seats may have been taken.');
+        setSeatError(result.error || result.message || 'Booking failed. Some seats may have been taken.');
         toast.error('Booking failed');
         setIsSubmitting(false);
         return;
@@ -240,507 +250,630 @@ export default function Home() {
     }
   };
 
-  // Phase 1: Hero
+  // Render hero phase
   if (phase === 1) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          backgroundImage: `url(${HERO_IMAGE})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        backgroundImage: `url(${HERO_IMAGE})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundAttachment: 'fixed'
+      }}>
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(135deg, rgba(20,8,20,0.7) 0%, rgba(40,15,35,0.6) 50%, rgba(20,8,20,0.7) 100%)'
+        }}></div>
+        
+        <div style={{
+          position: 'relative',
+          flex: 1,
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          position: 'relative'
-        }}
-      >
-        <div style={{ textAlign: 'center', color: 'white', zIndex: 10 }}>
-          <h1 style={{ fontSize: '64px', fontFamily: 'Cormorant Garamond', fontWeight: 'bold', color: '#C9A84C', marginBottom: '20px' }}>
+          textAlign: 'center',
+          padding: '2rem'
+        }}>
+          <h1 style={{
+            fontSize: '4rem',
+            fontWeight: '300',
+            letterSpacing: '0.15em',
+            color: '#C9A84C',
+            marginBottom: '1rem',
+            textShadow: '0 4px 20px rgba(0,0,0,0.5)',
+            fontFamily: 'Cormorant Garamond, serif'
+          }}>
             Peter Pan Ballet Gala
           </h1>
-          <p style={{ fontSize: '20px', marginBottom: '40px', maxWidth: '600px', margin: '0 auto 40px' }}>
+          
+          <p style={{
+            fontSize: '1.3rem',
+            color: '#E8E8E8',
+            maxWidth: '600px',
+            marginBottom: '3rem',
+            lineHeight: '1.6',
+            textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+            fontFamily: 'Lato, sans-serif'
+          }}>
             Experience the magic of Neverland. Reserve your premium seat for an unforgettable evening.
           </p>
+          
           <Button
             onClick={() => setPhase(2)}
             style={{
               backgroundColor: '#C9A84C',
-              color: '#1A0911',
-              padding: '16px 40px',
-              fontSize: '18px',
-              fontWeight: 'bold',
+              color: '#140814',
+              padding: '1rem 2.5rem',
+              fontSize: '1.1rem',
+              fontWeight: '600',
+              borderRadius: '0.5rem',
               border: 'none',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 8px 24px rgba(201, 168, 76, 0.3)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#DDB76F';
+              e.currentTarget.style.boxShadow = '0 12px 32px rgba(201, 168, 76, 0.5)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#C9A84C';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(201, 168, 76, 0.3)';
             }}
           >
             RESERVE YOUR SEAT →
           </Button>
         </div>
 
-        {/* WhatsApp button - BOTTOM LEFT */}
+        {/* WhatsApp Button */}
         <a
-          href={`https://wa.me/201000305053?text=Hi, I need help with seat booking`}
+          href="https://wa.me/201000305053"
           target="_blank"
           rel="noopener noreferrer"
           style={{
             position: 'fixed',
-            bottom: '24px',
-            left: '24px',
-            width: '56px',
-            height: '56px',
+            bottom: '2rem',
+            left: '2rem',
+            width: '60px',
+            height: '60px',
             backgroundColor: '#25D366',
             borderRadius: '50%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(37, 211, 102, 0.4)',
             cursor: 'pointer',
-            zIndex: 50,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+            transition: 'all 0.3s ease',
+            zIndex: 50
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'scale(1.1)';
+            e.currentTarget.style.boxShadow = '0 8px 20px rgba(37, 211, 102, 0.6)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 211, 102, 0.4)';
           }}
         >
-          <MessageCircle size={28} color="white" />
+          <MessageCircle size={32} color="white" />
         </a>
       </div>
     );
   }
 
-  // Phase 2: Seating + Form
+  // Render seating + form phase
   if (phase === 2) {
-    const isFormValid = phone.trim() && primaryGuest.trim() && selectedSeats.length > 0 && 
-                       companionNames.every(name => name.trim()) && 
-                       phone.replace(/\D/g, '').length >= 10;
-
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#1A0911', color: '#E5D4C1', padding: '40px 20px' }}>
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#140814',
+        color: '#E8E8E8',
+        padding: '2rem',
+        fontFamily: 'Lato, sans-serif'
+      }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          {/* Header */}
-          <h1 style={{ fontSize: '48px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', marginBottom: '10px', textAlign: 'center' }}>
-            Show {showNumber} — Select Your Seats
-          </h1>
-          <p style={{ textAlign: 'center', fontSize: '16px', marginBottom: '40px', color: '#A89968' }}>
-            Theater Seating Map
-          </p>
+          <h2 style={{
+            fontSize: '2.5rem',
+            fontWeight: '300',
+            letterSpacing: '0.1em',
+            color: '#C9A84C',
+            marginBottom: '2rem',
+            textAlign: 'center',
+            fontFamily: 'Cormorant Garamond, serif'
+          }}>
+            Select Your Seats
+          </h2>
 
           {/* Seating Map */}
-          <div style={{ backgroundColor: '#2D1B24', padding: '30px', borderRadius: '8px', marginBottom: '40px', overflowX: 'auto' }}>
-            {/* Stage */}
-            <div style={{ textAlign: 'center', marginBottom: '30px', fontSize: '18px', color: '#C9A84C', fontWeight: 'bold' }}>
-              ◆ STAGE ◆
+          <div style={{
+            backgroundColor: '#1a0f1a',
+            padding: '2rem',
+            borderRadius: '0.5rem',
+            marginBottom: '2rem',
+            border: '1px solid #3a2a3a'
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+              <div style={{
+                display: 'inline-block',
+                padding: '0.5rem 1rem',
+                backgroundColor: '#2a1a2a',
+                borderRadius: '0.25rem',
+                fontSize: '0.9rem',
+                color: '#999'
+              }}>
+                🎭 STAGE 🎭
+              </div>
             </div>
 
-            {/* Rows */}
             {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'].map(row => (
-              <div key={row} style={{ display: 'flex', alignItems: 'center', marginBottom: '12px', justifyContent: 'center', gap: '8px' }}>
-                {/* Left label */}
-                <div style={{ width: '30px', textAlign: 'right', fontSize: '14px', color: '#A89968', fontWeight: 'bold' }}>
+              <div key={row} style={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                marginBottom: '0.5rem',
+                alignItems: 'center'
+              }}>
+                <div style={{ width: '30px', textAlign: 'right', fontSize: '0.9rem', color: '#999' }}>
                   {row}
                 </div>
-
-                {/* Seats - REVERSED ORDER (22 to 1, so 1 is on right) */}
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  {Array.from({ length: 22 }, (_, i) => {
-                    const seatNum = 22 - i; // Reverse: 22, 21, 20, ..., 1
-                    const seat = seats.find(s => s.row === row && s.number === seatNum);
-                    if (!seat) return null;
-
-                    const isSelected = seat.state === 'selected';
-                    const isHeld = seat.state === 'held';
-                    const isBooked = seat.state === 'booked';
-
-                    let bgColor = '#14B8A6'; // available - teal
-                    let borderColor = '#14B8A6';
-                    let textColor = '#1A0911';
-                    let boxShadow = 'none';
-                    let cursor = 'pointer';
-
-                    if (isSelected) {
-                      bgColor = '#C9A84C'; // selected - gold
-                      borderColor = '#C9A84C';
-                      textColor = '#1A0911';
-                      boxShadow = '0 0 12px rgba(201, 168, 76, 0.6)'; // gold glow
-                    } else if (isHeld) {
-                      bgColor = '#6B5B5B'; // held - gray
-                      borderColor = '#6B5B5B';
-                      textColor = '#E5D4C1';
-                      cursor = 'not-allowed';
-                    } else if (isBooked) {
-                      bgColor = '#8B2C3B'; // booked - dark red
-                      borderColor = '#8B2C3B';
-                      textColor = '#E5D4C1';
-                      cursor = 'not-allowed';
-                    }
-
-                    return (
-                      <button
-                        key={`${row}${seatNum}`}
-                        onClick={() => handleSeatClick(seat)}
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          backgroundColor: bgColor,
-                          border: `2px solid ${borderColor}`,
-                          borderRadius: '4px',
-                          color: textColor,
-                          fontSize: '11px',
-                          fontWeight: 'bold',
-                          cursor,
-                          boxShadow,
-                          transition: 'all 0.2s ease',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                        disabled={isHeld || isBooked}
-                      >
-                        {seatNum}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Right label */}
-                <div style={{ width: '30px', textAlign: 'left', fontSize: '14px', color: '#A89968', fontWeight: 'bold' }}>
-                  {row}
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {seats
+                    .filter(s => s.row === row)
+                    .sort((a, b) => b.number - a.number)
+                    .map(seat => {
+                      const isSelected = selectedSeats.includes(seat);
+                      const isBooked = seat.state === 'booked';
+                      const isHeld = seat.state === 'held';
+                      
+                      let bgColor = '#2a1a2a';
+                      let borderColor = '#4a3a4a';
+                      let cursor = 'pointer';
+                      
+                      if (isSelected) {
+                        bgColor = '#FFD700';
+                        borderColor = '#C9A84C';
+                      } else if (isBooked) {
+                        bgColor = '#8B0000';
+                        borderColor = '#FF0000';
+                        cursor = 'not-allowed';
+                      } else if (isHeld) {
+                        bgColor = '#FF6B35';
+                        borderColor = '#FF8C42';
+                        cursor = 'not-allowed';
+                      }
+                      
+                      return (
+                        <button
+                          key={`${row}${seat.number}`}
+                          onClick={() => handleSeatClick(seat)}
+                          disabled={isBooked || isHeld}
+                          style={{
+                            width: '35px',
+                            height: '35px',
+                            backgroundColor: bgColor,
+                            border: `2px solid ${borderColor}`,
+                            borderRadius: '0.25rem',
+                            color: isSelected ? '#140814' : '#999',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            cursor,
+                            transition: 'all 0.2s ease',
+                            boxShadow: isSelected ? '0 0 12px rgba(255, 215, 0, 0.5)' : 'none'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isBooked && !isHeld) {
+                              e.currentTarget.style.transform = 'scale(1.1)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                        >
+                          {seat.number}
+                        </button>
+                      );
+                    })}
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Selection Summary */}
-          <div style={{ backgroundColor: '#2D1B24', padding: '16px', borderRadius: '8px', marginBottom: '30px', textAlign: 'center', fontSize: '16px', color: '#C9A84C', fontWeight: 'bold' }}>
-            Selected: {selectedSeats.length} seats · Total: EGP {selectedSeats.length * TICKET_PRICE}
+          {/* Legend */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '2rem',
+            marginBottom: '2rem',
+            flexWrap: 'wrap',
+            fontSize: '0.9rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '20px', height: '20px', backgroundColor: '#2a1a2a', border: '2px solid #4a3a4a', borderRadius: '0.25rem' }}></div>
+              <span>Available</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '20px', height: '20px', backgroundColor: '#FFD700', border: '2px solid #C9A84C', borderRadius: '0.25rem' }}></div>
+              <span>Selected</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '20px', height: '20px', backgroundColor: '#FF6B35', border: '2px solid #FF8C42', borderRadius: '0.25rem' }}></div>
+              <span>On Hold</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '20px', height: '20px', backgroundColor: '#8B0000', border: '2px solid #FF0000', borderRadius: '0.25rem' }}></div>
+              <span>Booked</span>
+            </div>
           </div>
 
-          {/* Error message */}
-          {seatError && (
-            <div style={{ backgroundColor: '#8B2C3B', color: '#E5D4C1', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' }}>
-              {seatError}
-            </div>
-          )}
-
-          {/* Booking Form - appears after seat selection */}
           {selectedSeats.length > 0 && (
-            <div style={{ backgroundColor: '#2D1B24', padding: '30px', borderRadius: '8px' }}>
-              <h2 style={{ fontSize: '24px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', marginBottom: '20px' }}>
-                Guest Details
-              </h2>
-
-              {/* Contact Phone */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold' }}>
-                  Contact Person Phone Number *
+            <div style={{
+              backgroundColor: '#1a0f1a',
+              padding: '1.5rem',
+              borderRadius: '0.5rem',
+              marginBottom: '2rem',
+              border: '1px solid #3a2a3a'
+            }}>
+              <h3 style={{ color: '#C9A84C', marginBottom: '1rem', fontFamily: 'Cormorant Garamond, serif' }}>
+                Booking Details
+              </h3>
+              
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#999', fontSize: '0.9rem' }}>
+                  Branch
                 </label>
-                <Input
-                  type="tel"
-                  placeholder="01XXXXXXXXX"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                <select
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value as 'MAD' | 'FAM')}
                   style={{
-                    backgroundColor: '#1A0911',
-                    color: '#E5D4C1',
-                    border: '2px solid #C9A84C',
-                    padding: '10px',
-                    borderRadius: '4px',
-                    fontSize: '14px'
+                    width: '100%',
+                    padding: '0.75rem',
+                    backgroundColor: '#2a1a2a',
+                    color: '#E8E8E8',
+                    border: '1px solid #4a3a4a',
+                    borderRadius: '0.25rem',
+                    fontFamily: 'Lato, sans-serif'
                   }}
-                />
+                >
+                  <option value="MAD">Maadi</option>
+                  <option value="FAM">FamBam</option>
+                </select>
               </div>
 
-              {/* Primary Guest */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold' }}>
-                  Primary Guest Name * — Seat {selectedSeats[0]?.row}{selectedSeats[0]?.number}
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#999', fontSize: '0.9rem' }}>
+                  Primary Guest Name *
                 </label>
                 <Input
-                  placeholder="Guest name"
                   value={primaryGuest}
                   onChange={(e) => setPrimaryGuest(e.target.value)}
+                  placeholder="Your name"
                   style={{
-                    backgroundColor: '#1A0911',
-                    color: '#E5D4C1',
-                    border: '2px solid #C9A84C',
-                    padding: '10px',
-                    borderRadius: '4px',
-                    fontSize: '14px'
+                    backgroundColor: '#2a1a2a',
+                    color: '#E8E8E8',
+                    border: '1px solid #4a3a4a',
+                    borderRadius: '0.25rem',
+                    padding: '0.75rem'
                   }}
                 />
               </div>
 
-              {/* Companion Names */}
-              {companionNames.map((name, idx) => (
-                <div key={idx} style={{ marginBottom: '20px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold' }}>
-                    Companion {idx + 1} — Seat {selectedSeats[idx + 1]?.row}{selectedSeats[idx + 1]?.number}
-                  </label>
-                  <Input
-                    placeholder="Companion name"
-                    value={name}
-                    onChange={(e) => {
-                      const newNames = [...companionNames];
-                      newNames[idx] = e.target.value;
-                      setCompanionNames(newNames);
-                    }}
-                    style={{
-                      backgroundColor: '#1A0911',
-                      color: '#E5D4C1',
-                      border: '2px solid #C9A84C',
-                      padding: '10px',
-                      borderRadius: '4px',
-                      fontSize: '14px'
-                    }}
-                  />
-                </div>
-              ))}
-
-              {/* Payment Method */}
-              <div style={{ marginBottom: '30px' }}>
-                <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: 'bold' }}>
-                  Payment Method *
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#999', fontSize: '0.9rem' }}>
+                  Phone Number *
                 </label>
-                <div style={{ display: 'flex', gap: '16px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="payment"
-                      value="InstaPay"
-                      checked={paymentMethod === 'InstaPay'}
-                      onChange={(e) => setPaymentMethod(e.target.value as 'InstaPay' | 'Cash')}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <span>💳 InstaPay</span>
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Your phone number"
+                  style={{
+                    backgroundColor: '#2a1a2a',
+                    color: '#E8E8E8',
+                    border: '1px solid #4a3a4a',
+                    borderRadius: '0.25rem',
+                    padding: '0.75rem'
+                  }}
+                />
+              </div>
+
+              {selectedSeats.length > 1 && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: '#999', fontSize: '0.9rem' }}>
+                    Companion Names
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="payment"
-                      value="Cash"
-                      checked={paymentMethod === 'Cash'}
-                      onChange={(e) => setPaymentMethod(e.target.value as 'InstaPay' | 'Cash')}
-                      style={{ cursor: 'pointer' }}
+                  {companionNames.map((name, idx) => (
+                    <Input
+                      key={idx}
+                      value={name}
+                      onChange={(e) => {
+                        const newNames = [...companionNames];
+                        newNames[idx] = e.target.value;
+                        setCompanionNames(newNames);
+                      }}
+                      placeholder={`Companion ${idx + 1} name`}
+                      style={{
+                        backgroundColor: '#2a1a2a',
+                        color: '#E8E8E8',
+                        border: '1px solid #4a3a4a',
+                        borderRadius: '0.25rem',
+                        padding: '0.75rem',
+                        marginBottom: '0.5rem'
+                      }}
                     />
-                    <span>💵 Cash</span>
-                  </label>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#999', fontSize: '0.9rem' }}>
+                  Payment Method
+                </label>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  {['InstaPay', 'Cash'].map(method => (
+                    <button
+                      key={method}
+                      onClick={() => setPaymentMethod(method as 'InstaPay' | 'Cash')}
+                      style={{
+                        flex: 1,
+                        padding: '0.75rem',
+                        backgroundColor: paymentMethod === method ? '#C9A84C' : '#2a1a2a',
+                        color: paymentMethod === method ? '#140814' : '#E8E8E8',
+                        border: `1px solid ${paymentMethod === method ? '#C9A84C' : '#4a3a4a'}`,
+                        borderRadius: '0.25rem',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {method}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Submit Button */}
-              <Button
-                onClick={handleSubmitBooking}
-                disabled={!isFormValid || isSubmitting}
-                style={{
-                  width: '100%',
-                  backgroundColor: isFormValid ? '#14B8A6' : '#6B5B5B',
-                  color: '#1A0911',
-                  padding: '12px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  border: '2px solid #C9A84C',
-                  cursor: isFormValid ? 'pointer' : 'not-allowed',
-                  borderRadius: '4px',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {isSubmitting ? 'SUBMITTING...' : 'SUBMIT BOOKING'}
-              </Button>
+              {seatError && (
+                <div style={{
+                  backgroundColor: '#8B0000',
+                  color: '#FFB6C6',
+                  padding: '1rem',
+                  borderRadius: '0.25rem',
+                  marginBottom: '1rem',
+                  fontSize: '0.9rem'
+                }}>
+                  {seatError}
+                </div>
+              )}
+
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '1rem',
+                paddingTop: '1rem',
+                borderTop: '1px solid #3a2a3a'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.9rem', color: '#999', marginBottom: '0.25rem' }}>
+                    Total: {selectedSeats.length} seats × {TICKET_PRICE} EGP
+                  </div>
+                  <div style={{ fontSize: '1.5rem', color: '#C9A84C', fontWeight: '600' }}>
+                    {selectedSeats.length * TICKET_PRICE} EGP
+                  </div>
+                </div>
+                <Button
+                  onClick={handleSubmitBooking}
+                  disabled={isSubmitting}
+                  style={{
+                    backgroundColor: '#C9A84C',
+                    color: '#140814',
+                    padding: '0.75rem 1.5rem',
+                    fontWeight: '600',
+                    borderRadius: '0.25rem',
+                    border: 'none',
+                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                    opacity: isSubmitting ? 0.6 : 1
+                  }}
+                >
+                  {isSubmitting ? 'Processing...' : 'HOLD MY SEATS'}
+                </Button>
+              </div>
             </div>
           )}
         </div>
-
-        {/* WhatsApp button - BOTTOM LEFT */}
-        <a
-          href={`https://wa.me/201000305053?text=Hi, I need help with seat booking`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            left: '24px',
-            width: '56px',
-            height: '56px',
-            backgroundColor: '#25D366',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            zIndex: 50,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
-          }}
-        >
-          <MessageCircle size={28} color="white" />
-        </a>
       </div>
     );
   }
 
-  // Phase 3: Payment
+  // Render payment phase
   if (phase === 3) {
-    const sortedSeats = [...selectedSeats].sort((a, b) => {
-      if (a.row !== b.row) return a.row.localeCompare(b.row);
-      return a.number - b.number;
-    });
-
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#1A0911', color: '#E5D4C1', padding: '40px 20px' }}>
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#140814',
+        color: '#E8E8E8',
+        padding: '2rem',
+        fontFamily: 'Lato, sans-serif'
+      }}>
         <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-          {/* Booking Summary */}
-          <div style={{ backgroundColor: '#2D1B24', padding: '30px', borderRadius: '8px', marginBottom: '30px', textAlign: 'center' }}>
-            <h2 style={{ fontSize: '24px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', marginBottom: '20px' }}>
-              ✅ Your seats are held for 15 minutes
-            </h2>
+          <h2 style={{
+            fontSize: '2.5rem',
+            fontWeight: '300',
+            letterSpacing: '0.1em',
+            color: '#C9A84C',
+            marginBottom: '2rem',
+            textAlign: 'center',
+            fontFamily: 'Cormorant Garamond, serif'
+          }}>
+            Complete Your Payment
+          </h2>
 
-            <div style={{ backgroundColor: '#1A0911', padding: '20px', borderRadius: '8px', marginBottom: '20px' }}>
-              <p style={{ fontSize: '14px', color: '#A89968', marginBottom: '8px' }}>Booking Code</p>
-              <p style={{ fontSize: '32px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', fontWeight: 'bold', wordBreak: 'break-all' }}>
+          <div style={{
+            backgroundColor: '#1a0f1a',
+            padding: '2rem',
+            borderRadius: '0.5rem',
+            border: '1px solid #3a2a3a',
+            marginBottom: '2rem'
+          }}>
+            <div style={{
+              backgroundColor: '#2a1a2a',
+              padding: '1.5rem',
+              borderRadius: '0.25rem',
+              marginBottom: '1.5rem',
+              textAlign: 'center'
+            }}>
+              <div style={{ color: '#999', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                Booking Code
+              </div>
+              <div style={{
+                fontSize: '2rem',
+                fontWeight: '700',
+                color: '#C9A84C',
+                fontFamily: 'monospace',
+                letterSpacing: '0.1em'
+              }}>
                 {bookingCode}
-              </p>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(bookingCode);
-                  toast.success('Booking code copied!');
-                }}
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              paddingBottom: '1rem',
+              borderBottom: '1px solid #3a2a3a',
+              marginBottom: '1rem'
+            }}>
+              <span style={{ color: '#999' }}>Total Amount:</span>
+              <span style={{ fontSize: '1.3rem', color: '#C9A84C', fontWeight: '600' }}>
+                {totalPrice} EGP
+              </span>
+            </div>
+
+            <div style={{
+              backgroundColor: '#2a1a2a',
+              padding: '1rem',
+              borderRadius: '0.25rem',
+              marginBottom: '1.5rem',
+              fontSize: '0.9rem',
+              color: '#999',
+              lineHeight: '1.6'
+            }}>
+              <strong style={{ color: '#C9A84C' }}>⏱️ Hold Duration:</strong> {formatTime(timeRemaining)}
+              <br />
+              Your seats are held for 15 minutes. Complete payment before time expires.
+            </div>
+
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}>
+              <a
+                href={INSTAPAY_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setPaymentTabOpened(true)}
                 style={{
-                  marginTop: '12px',
-                  backgroundColor: 'transparent',
-                  border: '1px solid #C9A84C',
-                  color: '#C9A84C',
-                  padding: '8px 16px',
-                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: '#C9A84C',
+                  color: '#140814',
+                  padding: '1rem',
+                  borderRadius: '0.25rem',
+                  textDecoration: 'none',
+                  fontWeight: '600',
                   cursor: 'pointer',
-                  fontSize: '12px'
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#DDB76F';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#C9A84C';
                 }}
               >
-                Copy Code
+                💳 Pay with InstaPay
+              </a>
+
+              <button
+                onClick={() => {
+                  const waMessage = `I've completed payment for booking ${bookingCode}. Please confirm my reservation.`;
+                  window.open(`https://wa.me/201000305053?text=${encodeURIComponent(waMessage)}`, '_blank');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: '#25D366',
+                  color: 'white',
+                  padding: '1rem',
+                  borderRadius: '0.25rem',
+                  border: 'none',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#20BA5A';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#25D366';
+                }}
+              >
+                <MessageCircle size={20} />
+                Confirm on WhatsApp
               </button>
-            </div>
 
-            {/* Seat List */}
-            <div style={{ textAlign: 'left', backgroundColor: '#1A0911', padding: '16px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px' }}>
-              {sortedSeats.map((seat, idx) => (
-                <div key={idx} style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{seat.row}{seat.number}</span>
-                  <span style={{ color: '#A89968' }}>
-                    {idx === 0 ? primaryGuest : companionNames[idx - 1]}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#C9A84C', marginBottom: '20px' }}>
-              Total: EGP {totalPrice}
-            </div>
-
-            {/* Timer */}
-            <div style={{ fontSize: '24px', fontFamily: 'Cormorant Garamond', color: timeRemaining <= 120 ? '#8B2C3B' : '#14B8A6', fontWeight: 'bold' }}>
-              {formatTime(timeRemaining)}
+              <button
+                onClick={() => {
+                  const subject = `Payment Confirmation - Booking ${bookingCode}`;
+                  const body = `I have completed payment for booking code: ${bookingCode}\n\nPlease confirm my reservation.`;
+                  window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: '#EA4335',
+                  color: 'white',
+                  padding: '1rem',
+                  borderRadius: '0.25rem',
+                  border: 'none',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#D33425';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#EA4335';
+                }}
+              >
+                <Mail size={20} />
+                Confirm by Email
+              </button>
             </div>
           </div>
 
-          {/* Payment Instructions */}
-          {paymentMethod === 'InstaPay' ? (
-            <>
-              <div style={{ backgroundColor: '#2D1B24', padding: '20px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px', lineHeight: '1.8' }}>
-                <p style={{ marginBottom: '12px' }}>
-                  <strong>Payment Instructions:</strong>
-                </p>
-                <ol style={{ marginLeft: '20px', marginBottom: '12px' }}>
-                  <li>Click the button below to open InstaPay</li>
-                  <li>Send EGP {totalPrice} to <strong>h.shimi@instapay</strong></li>
-                  <li>Take a screenshot of your payment receipt</li>
-                  <li>Come back here and click the WhatsApp button below</li>
-                  <li>Send the pre-filled WhatsApp message with your receipt screenshot</li>
-                </ol>
-              </div>
-
-              <Button
-                onClick={() => {
-                  window.open(INSTAPAY_LINK, '_blank');
-                  setPaymentTabOpened(true);
-                }}
-                style={{
-                  width: '100%',
-                  backgroundColor: '#14B8A6',
-                  color: '#1A0911',
-                  padding: '12px',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                  border: 'none',
-                  cursor: 'pointer',
-                  borderRadius: '4px',
-                  marginBottom: '20px'
-                }}
-              >
-                {paymentTabOpened ? '✓ Payment Tab Opened — Come back here' : 'Pay via InstaPay →'}
-              </Button>
-
-              {whatsappLink && (
-                <a
-                  href={whatsappLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    backgroundColor: '#25D366',
-                    color: 'white',
-                    padding: '12px',
-                    fontSize: '16px',
-                    fontWeight: 'bold',
-                    border: 'none',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    textAlign: 'center',
-                    textDecoration: 'none',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  📲 Send Payment Confirmation on WhatsApp
-                </a>
-              )}
-            </>
-          ) : (
-            <div style={{ backgroundColor: '#2D1B24', padding: '20px', borderRadius: '8px', fontSize: '14px', lineHeight: '1.8' }}>
-              <p style={{ marginBottom: '12px', fontSize: '16px', fontWeight: 'bold', color: '#C9A84C' }}>
-                ✅ Your seats are held for 15 minutes
-              </p>
-              <p style={{ marginBottom: '12px' }}>
-                Please give this code to the receptionist at the front desk:
-              </p>
-              <p style={{ fontSize: '24px', fontFamily: 'Cormorant Garamond', color: '#C9A84C', fontWeight: 'bold', marginBottom: '12px' }}>
-                {bookingCode}
-              </p>
-              <p>
-                They will confirm your booking once you pay cash.
-              </p>
-            </div>
-          )}
+          <div style={{
+            backgroundColor: '#2a1a2a',
+            padding: '1rem',
+            borderRadius: '0.25rem',
+            fontSize: '0.85rem',
+            color: '#999',
+            lineHeight: '1.6',
+            textAlign: 'center'
+          }}>
+            After payment, please contact us via WhatsApp or email to confirm your booking. Your seats will be reserved once payment is verified.
+          </div>
         </div>
-
-        {/* WhatsApp button - BOTTOM LEFT */}
-        <a
-          href={`https://wa.me/201000305053?text=Hi, I need help with seat booking`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            left: '24px',
-            width: '56px',
-            height: '56px',
-            backgroundColor: '#25D366',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            zIndex: 50,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
-          }}
-        >
-          <MessageCircle size={28} color="white" />
-        </a>
       </div>
     );
   }
