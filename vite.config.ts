@@ -238,8 +238,8 @@ export default defineConfig({
       deny: ["**/.*"],
     },
     hmr: {
-      protocol: "ws",
-      port: 3000,
+      protocol: 'wss',
+      clientPort: 443,
     },
   },
 });
