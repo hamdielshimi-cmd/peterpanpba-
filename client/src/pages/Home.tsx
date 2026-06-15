@@ -299,7 +299,6 @@ export default function Home() {
       
       const response = await fetch(GAS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'submit',
           showNumber: parseInt(showNumber),

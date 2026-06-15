@@ -88,7 +88,6 @@ export default function Admin() {
       
       const response = await fetch(GAS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'confirm',
           code: searchResult.code,
@@ -129,7 +128,6 @@ export default function Admin() {
       
       const response = await fetch(GAS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'cancel',
           code: searchResult.code,
