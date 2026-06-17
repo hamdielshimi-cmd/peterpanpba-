@@ -163,7 +163,7 @@ export default function Admin() {
 
     try {
       // Generate WhatsApp message
-      const message = `✅ Confirmed — Hi ${searchResult.primaryGuest}, your booking for Show ${searchResult.showNumber} is confirmed. Code: ${searchResult.code}. Seats: ${searchResult.totalSeats}. Total: EGP ${searchResult.totalPrice}. See you there! 🎭`;
+      const message = `✅ Confirmed — Hi ${searchResult.primaryGuest}, your booking for Show ${searchResult.showNumber} is confirmed. Code: ${searchResult.code}. Seats: ${searchResult.totalSeats}. Total: ${searchResult.totalPrice} EGP.`;
       const whatsappLink = `https://wa.me/${searchResult.phone}?text=${encodeURIComponent(message)}`;
       window.open(whatsappLink, '_blank');
     } catch (error) {
