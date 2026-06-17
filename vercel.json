@@ -1,7 +1,15 @@
 {
   "version": 2,
   "buildCommand": "pnpm build",
+  "installCommand": "pnpm install",
+  "framework": null,
   "outputDirectory": "dist",
-  "framework": "vite",
-  "installCommand": "pnpm install"
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "dist/index.js": {
+      "runtime": "nodejs20.x"
+    }
+  }
 }
