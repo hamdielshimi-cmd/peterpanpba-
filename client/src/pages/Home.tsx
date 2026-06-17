@@ -9,7 +9,7 @@ import { useLocation } from 'wouter';
 // Constants
 const TICKET_PRICE = 500; // EGP per seat
 const NORMAL_HOLD_DURATION = 900; // 15 minutes in seconds
-const INSTAPAY_LINK = 'https://ipn.eg/S/h.shimi/instapay/1IXe5g';
+const INSTAPAY_LINK = 'https://ipn.eg/S/aliyehiapba6121/instapay/9Rxw7m';
 const SUPPORT_EMAIL = 'hamdielshimi@gmail.com';
 const HERO_IMAGE = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663340831653/2Ktp4TNevcqWNNpdcRjkGW/peter-pan-hero-bg-LQ9yMucFTHQFuH579545zp.webp';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbzW8zI8dei_QKpREErapvifv_ECrvrRtAl0M5kFRKr4b_Bke8nRPWtpTt-C_SGxtFFM/exec';
@@ -953,10 +953,40 @@ export default function Home() {
               }}>
                 <strong style={{ color: '#C9A84C' }}>💳 Payment Instructions:</strong>
                 <br />
-                Send {totalPrice} EGP to InstaPay (details coming soon)
+                Send {totalPrice} EGP via InstaPay using the button below.
                 <br />
                 Then confirm your payment below.
               </div>
+
+              <a
+                href={INSTAPAY_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: '#FF6B35',
+                  color: 'white',
+                  padding: '1rem',
+                  borderRadius: '0.25rem',
+                  border: 'none',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  textDecoration: 'none',
+                  marginBottom: '0.5rem'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#FF5722';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#FF6B35';
+                }}
+              >
+                💳 Pay Now via InstaPay
+              </a>
 
               <button
                 onClick={() => {
