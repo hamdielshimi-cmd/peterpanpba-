@@ -12,7 +12,7 @@ const NORMAL_HOLD_DURATION = 900; // 15 minutes in seconds
 const INSTAPAY_LINK = 'https://ipn.eg/S/h.shimi/instapay/1IXe5g';
 const SUPPORT_EMAIL = 'hamdielshimi@gmail.com';
 const HERO_IMAGE = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663340831653/2Ktp4TNevcqWNNpdcRjkGW/peter-pan-hero-bg-LQ9yMucFTHQFuH579545zp.webp';
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyEnTJFB8_YgD69jR-wOTRhTGJPOUt5RuTORJz5378HO4_rxAIc9YsP4qscImpM3AND/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzW8zI8dei_QKpREErapvifv_ECrvrRtAl0M5kFRKr4b_Bke8nRPWtpTt-C_SGxtFFM/exec';
 
 // Show dates (Cairo timezone)
 const SHOW_DATES: Record<number, string> = {
@@ -23,35 +23,21 @@ const SHOW_DATES: Record<number, string> = {
   5: 'June 27, 2026 - 8:30 PM'
 };
 
-// Seat layout definition
-const SEAT_LAYOUT = {
-  // Rows A-U: 3 blocks
-  rightBlockRows: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'],
-  middleBlockRows: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'],
-  leftBlockRows: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'],
-  
-  // Rows V-W: Right/Left only
-  vwRows: ['V', 'W'],
-  
-  // Row X: Right/Left only (9 seats each)
-  xRows: ['X'],
-  
-  // Rows Y, Z, ZA: Right/Left only (10 seats each)
-  yzaRows: ['Y', 'Z', 'ZA'],
-  
-  rightBlockSeats: 7,
-  middleBlockSeats: 13,
-  leftBlockSeats: 7,
-  xRightSeats: 9,
-  xLeftSeats: 9,
-  yzaSeats: 10
-};
+// Blocked seats: only middle section of rows A, E, F
+const BLOCKED_ROWS = ['A', 'E', 'F'];
+
+// Branches with their codes
+const BRANCHES = [
+  { label: 'Maadi', code: 'MAD' },
+  { label: 'New Cairo (The FamBam mall)', code: 'FAM' },
+  { label: 'New Giza', code: 'GIZ' },
+  { label: 'Sheikh Zayed', code: 'ZAY' }
+];
 
 // Types
 interface Seat {
-  id: string; // e.g., "A-R1"
+  id: string; // e.g., "A1", "A2", etc.
   row: string;
-  block: 'R' | 'M' | 'L'; // Right, Middle, Left
   number: number;
   state: 'available' | 'selected' | 'held' | 'booked' | 'blocked';
 }
@@ -87,48 +73,23 @@ const getLateNightHoldUntil = () => {
   return tomorrow.getTime() - new Date(cairoTime).getTime();
 };
 
-// Initialize seats based on layout
+// Initialize seats: 27 seats per row (left 7, middle 13, right 7)
+// Rows V-ZA have wider middle section (gate)
 const initializeSeats = (): Seat[] => {
   const seats: Seat[] = [];
+  const allRows = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'ZA'];
   
-  // Rows A-U with all 3 blocks
-  SEAT_LAYOUT.rightBlockRows.forEach(row => {
-    for (let i = 1; i <= SEAT_LAYOUT.rightBlockSeats; i++) {
-      seats.push({ id: `${row}-R${i}`, row, block: 'R', number: i, state: 'available' });
-    }
-    for (let i = 1; i <= SEAT_LAYOUT.middleBlockSeats; i++) {
-      seats.push({ id: `${row}-M${i}`, row, block: 'M', number: i, state: 'available' });
-    }
-    for (let i = 1; i <= SEAT_LAYOUT.leftBlockSeats; i++) {
-      seats.push({ id: `${row}-L${i}`, row, block: 'L', number: i, state: 'available' });
-    }
-  });
-  
-  // Rows V-W: Right and Left only
-  SEAT_LAYOUT.vwRows.forEach(row => {
-    for (let i = 1; i <= SEAT_LAYOUT.rightBlockSeats; i++) {
-      seats.push({ id: `${row}-R${i}`, row, block: 'R', number: i, state: 'available' });
-    }
-    for (let i = 1; i <= SEAT_LAYOUT.leftBlockSeats; i++) {
-      seats.push({ id: `${row}-L${i}`, row, block: 'L', number: i, state: 'available' });
-    }
-  });
-  
-  // Row X: Right and Left only (9 seats each)
-  for (let i = 1; i <= SEAT_LAYOUT.xRightSeats; i++) {
-    seats.push({ id: `X-R${i}`, row: 'X', block: 'R', number: i, state: 'available' });
-  }
-  for (let i = 1; i <= SEAT_LAYOUT.xLeftSeats; i++) {
-    seats.push({ id: `X-L${i}`, row: 'X', block: 'L', number: i, state: 'available' });
-  }
-  
-  // Rows Y, Z, ZA: Right and Left only (10 seats each)
-  SEAT_LAYOUT.yzaRows.forEach(row => {
-    for (let i = 1; i <= SEAT_LAYOUT.yzaSeats; i++) {
-      seats.push({ id: `${row}-R${i}`, row, block: 'R', number: i, state: 'available' });
-    }
-    for (let i = 1; i <= SEAT_LAYOUT.yzaSeats; i++) {
-      seats.push({ id: `${row}-L${i}`, row, block: 'L', number: i, state: 'available' });
+  allRows.forEach(row => {
+    for (let i = 1; i <= 27; i++) {
+      const seatId = `${row}${i}`;
+      let state: 'available' | 'blocked' = 'available';
+      
+      // Block middle seats (8-20) for rows A, E, F
+      if (BLOCKED_ROWS.includes(row) && i >= 8 && i <= 20) {
+        state = 'blocked';
+      }
+      
+      seats.push({ id: seatId, row, number: i, state });
     }
   });
   
@@ -150,14 +111,11 @@ export default function Home() {
   const [selectedSeats, setSelectedSeats] = useState<Seat[]>([]);
   const [confirmedSeats, setConfirmedSeats] = useState<string[]>([]);
   const [pendingSeats, setPendingSeats] = useState<string[]>([]);
-  const [blockedSeats, setBlockedSeats] = useState<string[]>([]);
   
   // Booking form state
   const [phone, setPhone] = useState('');
   const [primaryGuest, setPrimaryGuest] = useState('');
-  const [companionNames, setCompanionNames] = useState<string[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'InstaPay' | 'Cash'>('InstaPay');
-  const [branch, setBranch] = useState<'Maadi' | 'FamBam'>('Maadi');
+  const [branch, setBranch] = useState('Maadi');
   
   // Payment state
   const [bookingCode, setBookingCode] = useState('');
@@ -193,10 +151,11 @@ export default function Home() {
         const data = await response.json();
         setConfirmedSeats(data.confirmed || []);
         setPendingSeats(data.pending || []);
-        setBlockedSeats(data.blocked || []);
         
         setSeats(prevSeats => prevSeats.map(seat => {
-          if (data.blocked?.includes(seat.id)) return { ...seat, state: 'blocked' };
+          if (BLOCKED_ROWS.includes(seat.row) && seat.number >= 8 && seat.number <= 20) {
+            return { ...seat, state: 'blocked' };
+          }
           if (data.confirmed?.includes(seat.id)) return { ...seat, state: 'booked' };
           if (data.pending?.includes(seat.id)) return { ...seat, state: 'held' };
           return { ...seat, state: 'available' };
@@ -238,7 +197,6 @@ export default function Home() {
     if (seat.state === 'selected') {
       setSelectedSeats(selectedSeats.filter(s => s.id !== seat.id));
       setSeats(seats.map(s => s.id === seat.id ? { ...s, state: 'available' } : s));
-      setCompanionNames(companionNames.slice(0, selectedSeats.length - 2));
     } else {
       if (selectedSeats.length >= 6) {
         setSeatError('Maximum 6 seats per booking');
@@ -246,9 +204,6 @@ export default function Home() {
       }
       setSelectedSeats([...selectedSeats, seat]);
       setSeats(seats.map(s => s.id === seat.id ? { ...s, state: 'selected' } : s));
-      if (selectedSeats.length > 0) {
-        setCompanionNames([...companionNames, '']);
-      }
     }
   };
 
@@ -264,11 +219,6 @@ export default function Home() {
       return;
     }
 
-    if (companionNames.some(name => !name.trim())) {
-      toast.error('Please fill all companion names');
-      return;
-    }
-
     setIsSubmitting(true);
     setDuplicateError('');
     
@@ -276,18 +226,18 @@ export default function Home() {
       // Sort selected seats for consistent ordering
       const sortedSeats = [...selectedSeats].sort((a, b) => {
         if (a.row !== b.row) return a.row.localeCompare(b.row);
-        if (a.block !== b.block) return a.block.localeCompare(b.block);
         return a.number - b.number;
       });
 
-      // Build seat-guest pairs
-      const seatGuestPairs = [
-        { seat: sortedSeats[0].id, guest: primaryGuest },
-        ...companionNames.map((name, idx) => ({
-          seat: sortedSeats[idx + 1].id,
-          guest: name
-        }))
-      ];
+      // Build seat-guest pairs (all seats use primary guest name)
+      const seatGuestPairs = sortedSeats.map(seat => ({
+        seat: seat.id,
+        guest: primaryGuest
+      }));
+
+      // Find branch code
+      const selectedBranch = BRANCHES.find(b => b.label === branch);
+      const branchCode = selectedBranch?.code || 'MAD';
 
       // Check for late-night booking
       const lateNight = isLateNightBooking();
@@ -304,8 +254,8 @@ export default function Home() {
           showNumber: parseInt(showNumber),
           primaryGuest,
           phone,
-          paymentMethod,
-          branch,
+          paymentMethod: 'InstaPay',
+          branch: branchCode,
           seatGuestPairs
         }),
         signal: controller.signal,
@@ -536,19 +486,19 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Seat map with 3 blocks */}
+            {/* Seat map */}
             {allRows.map(row => {
-              const rightSeats = seats.filter(s => s.row === row && s.block === 'R');
-              const middleSeats = seats.filter(s => s.row === row && s.block === 'M');
-              const leftSeats = seats.filter(s => s.row === row && s.block === 'L');
+              const rowSeats = seats.filter(s => s.row === row);
+              if (rowSeats.length === 0) return null;
               
-              if (rightSeats.length === 0 && middleSeats.length === 0 && leftSeats.length === 0) return null;
+              // For rows V-ZA, use wider spacing for middle section (gate)
+              const isWideGateRow = ['V', 'W', 'X', 'Y', 'Z', 'ZA'].includes(row);
               
               return (
                 <div key={row} style={{
                   display: 'flex',
                   justifyContent: 'center',
-                  gap: '2rem',
+                  gap: isWideGateRow ? '3rem' : '1rem',
                   marginBottom: '0.75rem',
                   alignItems: 'center'
                 }}>
@@ -556,9 +506,9 @@ export default function Home() {
                     {row}
                   </div>
                   
-                  {/* Right Block */}
+                  {/* Left section (seats 1-7) */}
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {rightSeats.map(seat => {
+                    {rowSeats.slice(0, 7).map(seat => {
                       const isSelected = selectedSeats.some(s => s.id === seat.id);
                       let bgColor = '#2a1a2a';
                       let borderColor = '#4a3a4a';
@@ -616,71 +566,69 @@ export default function Home() {
                     })}
                   </div>
                   
-                  {/* Middle Block */}
-                  {middleSeats.length > 0 && (
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      {middleSeats.map(seat => {
-                        const isSelected = selectedSeats.some(s => s.id === seat.id);
-                        let bgColor = '#2a1a2a';
-                        let borderColor = '#4a3a4a';
-                        let cursor = 'pointer';
-                        
-                        if (isSelected) {
-                          bgColor = '#FFD700';
-                          borderColor = '#C9A84C';
-                        } else if (seat.state === 'booked') {
-                          bgColor = '#8B0000';
-                          borderColor = '#FF0000';
-                          cursor = 'not-allowed';
-                        } else if (seat.state === 'held') {
-                          bgColor = '#FF6B35';
-                          borderColor = '#FF8C42';
-                          cursor = 'not-allowed';
-                        } else if (seat.state === 'blocked') {
-                          bgColor = '#1a1a1a';
-                          borderColor = '#333333';
-                          cursor = 'not-allowed';
-                        }
-                        
-                        return (
-                          <button
-                            key={seat.id}
-                            onClick={() => handleSeatClick(seat)}
-                            disabled={seat.state !== 'available' && seat.state !== 'selected'}
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              backgroundColor: bgColor,
-                              border: `2px solid ${borderColor}`,
-                              borderRadius: '0.25rem',
-                              color: isSelected ? '#140814' : '#999',
-                              fontSize: '0.65rem',
-                              fontWeight: '600',
-                              cursor,
-                              transition: 'all 0.2s ease',
-                              boxShadow: isSelected ? '0 0 12px rgba(255, 215, 0, 0.5)' : 'none',
-                              padding: 0
-                            }}
-                            onMouseEnter={(e) => {
-                              if (seat.state === 'available' || seat.state === 'selected') {
-                                e.currentTarget.style.transform = 'scale(1.1)';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.transform = 'scale(1)';
-                            }}
-                            title={seat.id}
-                          >
-                            {seat.number}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  
-                  {/* Left Block */}
+                  {/* Middle section (seats 8-20) - wider gap for gate in rows V-ZA */}
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {leftSeats.map(seat => {
+                    {rowSeats.slice(7, 20).map(seat => {
+                      const isSelected = selectedSeats.some(s => s.id === seat.id);
+                      let bgColor = '#2a1a2a';
+                      let borderColor = '#4a3a4a';
+                      let cursor = 'pointer';
+                      
+                      if (isSelected) {
+                        bgColor = '#FFD700';
+                        borderColor = '#C9A84C';
+                      } else if (seat.state === 'booked') {
+                        bgColor = '#8B0000';
+                        borderColor = '#FF0000';
+                        cursor = 'not-allowed';
+                      } else if (seat.state === 'held') {
+                        bgColor = '#FF6B35';
+                        borderColor = '#FF8C42';
+                        cursor = 'not-allowed';
+                      } else if (seat.state === 'blocked') {
+                        bgColor = '#1a1a1a';
+                        borderColor = '#333333';
+                        cursor = 'not-allowed';
+                      }
+                      
+                      return (
+                        <button
+                          key={seat.id}
+                          onClick={() => handleSeatClick(seat)}
+                          disabled={seat.state !== 'available' && seat.state !== 'selected'}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            backgroundColor: bgColor,
+                            border: `2px solid ${borderColor}`,
+                            borderRadius: '0.25rem',
+                            color: isSelected ? '#140814' : '#999',
+                            fontSize: '0.65rem',
+                            fontWeight: '600',
+                            cursor,
+                            transition: 'all 0.2s ease',
+                            boxShadow: isSelected ? '0 0 12px rgba(255, 215, 0, 0.5)' : 'none',
+                            padding: 0
+                          }}
+                          onMouseEnter={(e) => {
+                            if (seat.state === 'available' || seat.state === 'selected') {
+                              e.currentTarget.style.transform = 'scale(1.1)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                          title={seat.id}
+                        >
+                          {seat.number}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Right section (seats 21-27) */}
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {rowSeats.slice(20, 27).map(seat => {
                       const isSelected = selectedSeats.some(s => s.id === seat.id);
                       let bgColor = '#2a1a2a';
                       let borderColor = '#4a3a4a';
@@ -791,7 +739,7 @@ export default function Home() {
                 </label>
                 <select
                   value={branch}
-                  onChange={(e) => setBranch(e.target.value as 'Maadi' | 'FamBam')}
+                  onChange={(e) => setBranch(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '0.75rem',
@@ -802,14 +750,15 @@ export default function Home() {
                     fontFamily: 'Lato, sans-serif'
                   }}
                 >
-                  <option value="Maadi">Maadi</option>
-                  <option value="FamBam">FamBam</option>
+                  {BRANCHES.map(b => (
+                    <option key={b.code} value={b.label}>{b.label}</option>
+                  ))}
                 </select>
               </div>
 
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: '#999', fontSize: '0.9rem' }}>
-                  Primary Guest Name *
+                  Guest Name *
                 </label>
                 <Input
                   value={primaryGuest}
@@ -841,61 +790,6 @@ export default function Home() {
                     padding: '0.75rem'
                   }}
                 />
-              </div>
-
-              {selectedSeats.length > 1 && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', color: '#999', fontSize: '0.9rem' }}>
-                    Companion Names
-                  </label>
-                  {companionNames.map((name, idx) => (
-                    <Input
-                      key={idx}
-                      value={name}
-                      onChange={(e) => {
-                        const newNames = [...companionNames];
-                        newNames[idx] = e.target.value;
-                        setCompanionNames(newNames);
-                      }}
-                      placeholder={`Companion ${idx + 1} name`}
-                      style={{
-                        backgroundColor: '#2a1a2a',
-                        color: '#E8E8E8',
-                        border: '1px solid #4a3a4a',
-                        borderRadius: '0.25rem',
-                        padding: '0.75rem',
-                        marginBottom: '0.5rem'
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#999', fontSize: '0.9rem' }}>
-                  Payment Method
-                </label>
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  {['InstaPay', 'Cash'].map(method => (
-                    <button
-                      key={method}
-                      onClick={() => setPaymentMethod(method as 'InstaPay' | 'Cash')}
-                      style={{
-                        flex: 1,
-                        padding: '0.75rem',
-                        backgroundColor: paymentMethod === method ? '#C9A84C' : '#2a1a2a',
-                        color: paymentMethod === method ? '#140814' : '#E8E8E8',
-                        border: `1px solid ${paymentMethod === method ? '#C9A84C' : '#4a3a4a'}`,
-                        borderRadius: '0.25rem',
-                        cursor: 'pointer',
-                        fontWeight: '600',
-                        transition: 'all 0.2s ease'
-                      }}
-                    >
-                      {method}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {duplicateError && (
@@ -1044,74 +938,56 @@ export default function Home() {
                 : 'Your seats are held for 15 minutes. Complete payment before time expires.'}
             </div>
 
-            {paymentMethod === 'InstaPay' ? (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '1rem'
-              }}>
-                <div style={{
-                  backgroundColor: '#2a1a2a',
-                  padding: '1rem',
-                  borderRadius: '0.25rem',
-                  fontSize: '0.9rem',
-                  color: '#E8E8E8',
-                  lineHeight: '1.6'
-                }}>
-                  <strong style={{ color: '#C9A84C' }}>💳 Payment Instructions:</strong>
-                  <br />
-                  Send {totalPrice} EGP to InstaPay (details coming soon)
-                  <br />
-                  Then confirm your payment below.
-                </div>
-
-                <button
-                  onClick={() => {
-                    const waMessage = `I've completed payment for booking ${bookingCode}. Total: ${totalPrice} EGP. Please confirm my reservation.`;
-                    window.open(`https://wa.me/201000305053?text=${encodeURIComponent(waMessage)}`, '_blank');
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    backgroundColor: '#25D366',
-                    color: 'white',
-                    padding: '1rem',
-                    borderRadius: '0.25rem',
-                    border: 'none',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#20BA5A';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#25D366';
-                  }}
-                >
-                  <MessageCircle size={20} />
-                  Confirm Payment on WhatsApp
-                </button>
-              </div>
-            ) : (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}>
               <div style={{
                 backgroundColor: '#2a1a2a',
                 padding: '1rem',
                 borderRadius: '0.25rem',
                 fontSize: '0.9rem',
                 color: '#E8E8E8',
-                lineHeight: '1.6',
-                textAlign: 'center'
+                lineHeight: '1.6'
               }}>
-                <strong style={{ color: '#C9A84C' }}>💵 Cash Payment</strong>
+                <strong style={{ color: '#C9A84C' }}>💳 Payment Instructions:</strong>
                 <br />
-                Pay {totalPrice} EGP at the venue.
+                Send {totalPrice} EGP to InstaPay (details coming soon)
                 <br />
-                Show this code at the door: <strong>{bookingCode}</strong>
+                Then confirm your payment below.
               </div>
-            )}
+
+              <button
+                onClick={() => {
+                  const waMessage = `I've completed payment for booking ${bookingCode}. Total: ${totalPrice} EGP. Please confirm my reservation.`;
+                  window.open(`https://wa.me/201000305053?text=${encodeURIComponent(waMessage)}`, '_blank');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: '#25D366',
+                  color: 'white',
+                  padding: '1rem',
+                  borderRadius: '0.25rem',
+                  border: 'none',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#20BA5A';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#25D366';
+                }}
+              >
+                <MessageCircle size={20} />
+                Confirm Payment on WhatsApp
+              </button>
+            </div>
           </div>
 
           <div style={{
@@ -1123,9 +999,7 @@ export default function Home() {
             lineHeight: '1.6',
             textAlign: 'center'
           }}>
-            {paymentMethod === 'InstaPay' 
-              ? 'After payment, please confirm via WhatsApp. Your seats will be reserved once payment is verified.'
-              : 'Your booking code has been generated. Show this code at the venue to claim your seats.'}
+            After payment, please confirm via WhatsApp. Your seats will be reserved once payment is verified.
           </div>
         </div>
       </div>
