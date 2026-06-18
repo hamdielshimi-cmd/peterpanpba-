@@ -22,6 +22,18 @@ const SHOW_DATES: Record<number, string> = {
   5: 'June 27, 2026 - 8:30 PM'
 };
 
+// Show names and info
+const SHOW_NAMES: Record<number, string> = {
+  1: 'Cast 1 - Dress Rehearsal',
+  2: 'Cast 1 - Evening Show',
+  3: 'Cast 1 - Late Night Show',
+  4: 'Cast 2 - Evening Show',
+  5: 'Cast 2 - Late Night Show'
+};
+
+// Valid show numbers
+const VALID_SHOWS = [1, 2, 3, 4, 5];
+
 // Rows A–U, each 27 seats across all three blocks combined (7 + 13 + 7 = 27)
 const ALL_ROWS = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U'];
 const RIGHT_SEATS  = 7;
@@ -121,8 +133,18 @@ const initializeSeats = (): Seat[] => {
 
 export default function Home() {
   const [location] = useLocation();
-  const params = new URLSearchParams(location.split('?')[1] || '');
-  const showNumber = params.get('show') || '1';
+  
+  // Get show number from URL parameters
+  // wouter returns only the path without query string, so we need to check window.location
+  const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+  const rawShowNumber = urlParams.get('show') || '1';
+  
+  // Validate show number: must be 1-5
+  let showNumber = '1';
+  const parsedShow = parseInt(rawShowNumber);
+  if (VALID_SHOWS.includes(parsedShow)) {
+    showNumber = parsedShow.toString();
+  }
 
   const [phase, setPhase] = useState<1 | 2 | 3>(1);
 
@@ -317,6 +339,31 @@ export default function Home() {
         backgroundPosition: 'center',
         backgroundAttachment: 'fixed'
       }}>
+        {/* Show Indicator Banner */}
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: 'rgba(201, 168, 76, 0.15)',
+          backdropFilter: 'blur(8px)',
+          borderBottom: '1px solid rgba(201, 168, 76, 0.3)',
+          padding: '12px 20px',
+          textAlign: 'center',
+          zIndex: 40,
+          fontFamily: 'Lato, sans-serif'
+        }}>
+          <p style={{
+            margin: 0,
+            fontSize: '0.95rem',
+            fontWeight: '600',
+            color: '#C9A84C',
+            letterSpacing: '0.5px'
+          }}>
+            Show {showNumber} — {SHOW_NAMES[parseInt(showNumber)]}
+          </p>
+        </div>
+
         <div style={{
           position: 'absolute',
           inset: 0,
@@ -330,7 +377,8 @@ export default function Home() {
           justifyContent: 'center',
           alignItems: 'center',
           textAlign: 'center',
-          padding: '2rem'
+          padding: '2rem',
+          marginTop: '60px'
         }}>
           <h1 style={{
             fontSize: '4rem',
@@ -474,6 +522,45 @@ export default function Home() {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#140814', color: '#E8E8E8', padding: '2rem', fontFamily: 'Lato, sans-serif' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          {/* Show Info Bar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '2rem',
+            backgroundColor: '#1a0f1a',
+            padding: '14px 18px',
+            borderRadius: '0.5rem',
+            border: '1px solid #3a2a3a'
+          }}>
+            <button
+              onClick={() => setPhase(1)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#C9A84C',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: '600',
+                transition: 'opacity 0.2s'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.8'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+            >
+              ← Back
+            </button>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: '600', color: '#C9A84C' }}>
+                Show {showNumber} — {SHOW_NAMES[parseInt(showNumber)]}
+              </p>
+              <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#a89070' }}>
+                {SHOW_DATES[parseInt(showNumber)]}
+              </p>
+            </div>
+            <div style={{ width: '60px' }}></div>
+          </div>
+
           <h2 style={{
             fontSize: '2.5rem', fontWeight: '300', letterSpacing: '0.1em',
             color: '#C9A84C', marginBottom: '2rem', textAlign: 'center',
@@ -652,6 +739,19 @@ export default function Home() {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#140814', color: '#E8E8E8', padding: '2rem', fontFamily: 'Lato, sans-serif' }}>
         <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+          {/* Show Info */}
+          <div style={{
+            backgroundColor: '#1a0f1a', padding: '14px 18px', borderRadius: '0.5rem',
+            border: '1px solid #3a2a3a', marginBottom: '2rem', textAlign: 'center'
+          }}>
+            <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: '600', color: '#C9A84C' }}>
+              Show {showNumber} — {SHOW_NAMES[parseInt(showNumber)]}
+            </p>
+            <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#a89070' }}>
+              {SHOW_DATES[parseInt(showNumber)]}
+            </p>
+          </div>
+
           <h2 style={{
             fontSize: '2.5rem', fontWeight: '300', letterSpacing: '0.1em',
             color: '#C9A84C', marginBottom: '2rem', textAlign: 'center',
