@@ -15,20 +15,20 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbzW8zI8dei_QKpREErapvif
 
 // Show dates (Cairo timezone)
 const SHOW_DATES: Record<number, string> = {
-  1: 'June 26, 2026 - 6:00 PM',
-  2: 'June 26, 2026 - 8:30 PM',
-  3: 'June 26, 2026 - 11:00 PM',
+  1: 'June 26, 2026 - 1:30 PM',
+  2: 'June 26, 2026 - 6:00 PM',
+  3: 'June 27, 2026 - 12:00 PM',
   4: 'June 27, 2026 - 6:00 PM',
-  5: 'June 27, 2026 - 8:30 PM'
+  5: 'June 27, 2026 - 8:00 PM'
 };
 
 // Show names and info
 const SHOW_NAMES: Record<number, string> = {
-  1: 'Cast 1 - Dress Rehearsal',
-  2: 'Cast 1 - Evening Show',
-  3: 'Cast 1 - Late Night Show',
-  4: 'Cast 2 - Evening Show',
-  5: 'Cast 2 - Late Night Show'
+  1: 'Peter Pan Cast 1',
+  2: 'Peter Pan Cast 2',
+  3: 'Peter Pan Cast 3',
+  4: 'Contemporary SURVIVAL 1',
+  5: 'Contemporary SURVIVAL 2'
 };
 
 // Valid show numbers
