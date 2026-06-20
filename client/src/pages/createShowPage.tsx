@@ -8,7 +8,7 @@ const TICKET_PRICE = 500;
 const NORMAL_HOLD_DURATION = 900;
 const INSTAPAY_LINK = 'https://ipn.eg/S/aliyehiapba6121/instapay/9Rxw7m';
 const HERO_IMAGE = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663340831653/2Ktp4TNevcqWNNpdcRjkGW/peter-pan-hero-bg-LQ9yMucFTHQFuH579545zp.webp';
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzW8zI8dei_QKpREErapvifv_ECrvrRtAl0M5kFRKr4b_Bke8nRPWtpTt-C_SGxtFFM/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw1U7M2Yo0WNrVawnO6eRzvZuvJOfKIxu5Jew9Jslq_iBbhzOs-t_A7cIAMmv2t-T-k/exec';
 const WHATSAPP_NUMBER = '201000305053';
 
 // Show names — these are the actual show names
