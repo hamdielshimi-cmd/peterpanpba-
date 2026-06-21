@@ -45,9 +45,12 @@ const s: Record<string, React.CSSProperties> = {
 };
 
 const gasPost = async (body: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  console.log("[v0] GAS request:", body, "to URL:", GAS_URL);
   const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(body), mode: 'cors' });
   if (!res.ok) throw new Error('Service unavailable');
-  return res.json();
+  const data = await res.json();
+  console.log("[v0] GAS response:", data);
+  return data;
 };
 
 export default function Admin() {
@@ -119,8 +122,13 @@ export default function Admin() {
     setSelectedPending(null);
     try {
       const res = await gasPost({ action: 'getPending' });
+      console.log("[v0] GAS response for getPending:", res);
+      console.log("[v0] Pending bookings:", res.bookings);
       setPendingList((res.bookings as BookingResult[]) || []);
-    } catch { toast.error('Failed to load pending bookings'); }
+    } catch (err) { 
+      console.log("[v0] Error loading pending:", err);
+      toast.error('Failed to load pending bookings'); 
+    }
     finally { setPendingLoading(false); }
   };
 
