@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { MessageCircle, Clock, CheckCircle, XCircle, ChevronLeft } from 'lucide-react';
 
 const ADMIN_PASSWORD = 'peterpan2025';
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzW8zI8dei_QKpREErapvifv_ECrvrRtAl0M5kFRKr4b_Bke8nRPWtpTt-C_SGxtFFM/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzughNZylOlV2NTKfkt3WNrcfcbWPaDBvVeH0osmrkwp51tLuOESqe4Ss1hk42RNFuD/exec';
 
 const SHOW_DATES: Record<number, string> = {
   1: 'Jun 26 · 6:00 PM',
@@ -45,9 +45,12 @@ const s: Record<string, React.CSSProperties> = {
 };
 
 const gasPost = async (body: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  console.log("[v0] GAS request:", body, "to URL:", GAS_URL);
   const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(body), mode: 'cors' });
   if (!res.ok) throw new Error('Service unavailable');
-  return res.json();
+  const data = await res.json();
+  console.log("[v0] GAS response:", data);
+  return data;
 };
 
 export default function Admin() {
@@ -119,8 +122,13 @@ export default function Admin() {
     setSelectedPending(null);
     try {
       const res = await gasPost({ action: 'getPending' });
+      console.log("[v0] GAS response for getPending:", res);
+      console.log("[v0] Pending bookings:", res.bookings);
       setPendingList((res.bookings as BookingResult[]) || []);
-    } catch { toast.error('Failed to load pending bookings'); }
+    } catch (err) { 
+      console.log("[v0] Error loading pending:", err);
+      toast.error('Failed to load pending bookings'); 
+    }
     finally { setPendingLoading(false); }
   };
 
