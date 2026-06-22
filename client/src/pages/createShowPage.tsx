@@ -102,7 +102,7 @@ export function createShowPage(showNumber: number) {
         try {
           const controller = new AbortController();
           const tid = setTimeout(() => controller.abort(), 8000);
-          const res = await fetch(`${GAS_URL}?show=${showNumber}`, { signal: controller.signal, mode: 'cors' });
+const res = await fetch(`${GAS_URL}?action=getSeats&show=${showNumber}`, { signal: controller.signal, mode: 'cors' });
           clearTimeout(tid);
           if (!res.ok) return;
           const data = await res.json();
