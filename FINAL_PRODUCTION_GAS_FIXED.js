@@ -119,6 +119,20 @@ function doGet(e) {
 }
 
 // ============================================================================
+// GET SHOW NAME - Helper to get display name for show number
+// ============================================================================
+function getShowName(showNumber) {
+  const showNames = {
+    1: 'Peter Pan Cast 1 (Friday 1:30 PM)',
+    2: 'Peter Pan Cast 2 (Friday 6:00 PM)',
+    3: 'Peter Pan Cast 3 (Saturday 12:00 PM)',
+    4: 'Contemporary SURVIVAL 1 (Saturday 6:00 PM)',
+    5: 'Contemporary SURVIVAL 2 (Saturday 8:00 PM)'
+  };
+  return showNames[showNumber] || `Show ${showNumber}`;
+}
+
+// ============================================================================
 // SUBMIT BOOKING - Create new booking with 15-minute hold
 // ============================================================================
 function handleSubmit(data) {
@@ -166,15 +180,18 @@ function handleSubmit(data) {
   const pendingRow = row.slice(0, 10); // First 10 columns
   pendingSheet.appendRow(pendingRow);
   
-  // Send WhatsApp confirmation
-  const whatsappLink = `https://wa.me/20${data.phone}?text=Your%20booking%20code:%20${code}%20Hold%20expires%20in%2015%20minutes`;
+  // Create WhatsApp message with booking details pre-filled (Arabic)
+  const totalPrice = seatsCount * TICKET_PRICE;
+  const whatsappMessage = `كود الحجز: ${code} | الاسم: ${data.primaryGuest} | المقاعد: ${seatsCount} | المبلغ: ${totalPrice} جنيه`;
+  const whatsappLink = `https://wa.me/20${data.phone}?text=${encodeURIComponent(whatsappMessage)}`;
   
   return success({
     code,
-    totalPrice: seatsCount * TICKET_PRICE,
+    totalPrice,
     totalSeats: seatsCount,
     whatsappLink,
-    expiresAt: expiresAt.toISOString()
+    expiresAt: expiresAt.toISOString(),
+    message: whatsappMessage
   });
 }
 
@@ -182,7 +199,7 @@ function handleSubmit(data) {
 // GET BOOKED SEATS - Show which seats are held/booked
 // ============================================================================
 function handleGetSeats(data) {
-  const showNumber = parseInt(data.showNumber);
+  const showNumber = parseInt(data.showNumber || data.show);
   const sheetName = `Show${showNumber}`;
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(sheetName);
@@ -190,27 +207,32 @@ function handleGetSeats(data) {
   if (!sheet) return error(`Sheet not found`);
   
   const rows = sheet.getDataRange().getValues();
-  const now = Date.now();
-  const bookedSeats = [];
+  const confirmed = [];
+  const pending = [];
+  const blocked = [];
   
   // Skip header, process data rows
   for (let i = 1; i < rows.length; i++) {
     const status = rows[i][8]; // Column I (Status)
+    const seatsData = rows[i].slice(10, 15); // Columns K-O (Seat 1-5)
     
-    // Include Confirmed and Pending seats (within 15-min window)
     if (status === 'Confirmed') {
-      const seatsData = rows[i].slice(10, 15); // Columns K-O (Seat 1-5)
-      bookedSeats.push(...seatsData.filter(s => s));
+      confirmed.push(...seatsData.filter(s => s));
     } else if (status === 'Pending') {
       const timestamp = rows[i][0];
       if (isWithinHoldWindow(timestamp)) {
-        const seatsData = rows[i].slice(10, 15);
-        bookedSeats.push(...seatsData.filter(s => s));
+        pending.push(...seatsData.filter(s => s));
       }
+    } else if (status === 'Cancelled') {
+      // Don't add cancelled seats to any list
     }
   }
   
-  return success({ bookedSeats: [...new Set(bookedSeats)] });
+  return success({ 
+    confirmed: [...new Set(confirmed)], 
+    pending: [...new Set(pending)],
+    blocked: [...new Set(blocked)]
+  });
 }
 
 // ============================================================================
