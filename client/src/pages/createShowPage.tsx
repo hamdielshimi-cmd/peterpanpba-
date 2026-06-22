@@ -160,16 +160,14 @@ const res = await fetch(`${GAS_URL}?action=getSeats&show=${showNumber}`, { signa
         const sorted = [...selectedSeats].sort((a, b) =>
           a.row !== b.row ? a.row.localeCompare(b.row) : a.globalNumber - b.globalNumber
         );
-        const seatGuestPairs = sorted.map((seat, idx) => ({
-          seat: seat.id,
-          guest: idx === 0 ? primaryGuest : `Guest ${idx + 1}`
-        }));
+        const seats = sorted.map(s => s.id);
+        const seatGuests = sorted.map((seat, idx) => idx === 0 ? primaryGuest : `Guest ${idx + 1}`);
 
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), 15000);
         const res = await fetch(GAS_URL, {
           method: 'POST',
-          body: JSON.stringify({ action: 'submit', showNumber, primaryGuest, phone, paymentMethod: 'InstaPay', branch, seatGuestPairs }),
+          body: JSON.stringify({ action: 'submit', showNumber, primaryGuest, phone, paymentMethod: 'InstaPay', branch, seats, seatGuests }),
           signal: controller.signal,
           mode: 'cors'
         });
