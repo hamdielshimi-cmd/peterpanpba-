@@ -13,11 +13,11 @@ const WHATSAPP_NUMBER = '201000305053';
 
 // Show names — these are the actual show names
 const SHOW_INFO: Record<number, { name: string; date: string; time: string }> = {
-  1: { name: 'Peter Pan Cast 1',        date: 'Thursday, June 26', time: '1:30 PM'  },
-  2: { name: 'Peter Pan Cast 2',        date: 'Thursday, June 26', time: '6:00 PM'  },
-  3: { name: 'Peter Pan Cast 3',        date: 'Friday, June 27',   time: '12:00 PM' },
-  4: { name: 'Contemporary SURVIVAL 1', date: 'Friday, June 27',   time: '6:00 PM'  },
-  5: { name: 'Contemporary SURVIVAL 2', date: 'Friday, June 27',   time: '8:00 PM'  },
+  1: { name: 'Peter Pan Cast 1',        date: 'Friday, June 26', time: '1:30 PM'  },
+  2: { name: 'Peter Pan Cast 2',        date: 'Friday, June 26', time: '6:00 PM'  },
+  3: { name: 'Peter Pan Cast 3',        date: 'Saturday, June 27',   time: '12:00 PM' },
+  4: { name: 'Contemporary SURVIVAL 1', date: 'Saturday, June 27',   time: '6:00 PM'  },
+  5: { name: 'Contemporary SURVIVAL 2', date: 'Saturday, June 27',   time: '8:00 PM'  },
 };
 
 const ALL_ROWS = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U'];
