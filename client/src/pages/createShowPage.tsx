@@ -371,12 +371,12 @@ const res = await fetch(`${GAS_URL}?action=getSeats&show=${showNumber}`, { signa
 
             {/* Step 2: WhatsApp */}
             <div style={{ padding: '0.75rem 1rem', background: '#2a1a2a', borderRadius: 8, fontSize: '0.85rem', color: '#ccc' }}>
-              <strong style={{ color: gold }}>2. Notify via WhatsApp</strong>
-              <div style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>Our team will confirm payment & release seats.</div>
+              <strong style={{ color: gold }}>2. إرسال إيصال الدفع عبر واتساب</strong>
+              <div style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>سيقوم الفريق بتأكيد الدفع وتحرير المقاعد</div>
             </div>
             {whatsappLink && (
-              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', width: '100%', padding: '0.8rem', background: '#25D366', color: '#fff', borderRadius: 8, fontWeight: 700, textDecoration: 'none', marginTop: '1rem', border: 'none', cursor: 'pointer' }}>
-                ✓ Message on WhatsApp
+              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', width: '100%', padding: '0.8rem', background: '#25D366', color: '#fff', borderRadius: 8, fontWeight: 700, textDecoration: 'none', marginTop: '1rem', border: 'none', cursor: 'pointer', fontSize: '0.95rem' }}>
+                ✓ إرسال إيصال الدفع عبر واتساب
               </a>
             )}
 

@@ -180,10 +180,9 @@ function handleSubmit(data) {
   const pendingRow = row.slice(0, 10); // First 10 columns
   pendingSheet.appendRow(pendingRow);
   
-  // Create WhatsApp message with booking details pre-filled
-  const showName = getShowName(showNumber);
+  // Create WhatsApp message with booking details pre-filled (Arabic)
   const totalPrice = seatsCount * TICKET_PRICE;
-  const whatsappMessage = `Hi, I'd like to confirm my booking:\n\nName: ${data.primaryGuest}\nCode: ${code}\nShow: ${showName}\nSeats: ${seatsCount}\nTotal: ${totalPrice} EGP\n\nPlease see attached receipt.`;
+  const whatsappMessage = `كود الحجز: ${code} | الاسم: ${data.primaryGuest} | المقاعد: ${seatsCount} | المبلغ: ${totalPrice} جنيه`;
   const whatsappLink = `https://wa.me/20${data.phone}?text=${encodeURIComponent(whatsappMessage)}`;
   
   return success({
