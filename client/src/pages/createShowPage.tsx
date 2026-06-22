@@ -253,22 +253,24 @@ const res = await fetch(`${GAS_URL}?action=getSeats&show=${showNumber}`, { signa
               <div style={{ display: 'inline-block', padding: '0.4rem 2rem', background: '#2a1a2a', border: `1px solid ${gold}44`, borderRadius: 6, color: dim, fontSize: '0.8rem', letterSpacing: '0.15em' }}>🎭 STAGE</div>
             </div>
 
-            {/* Seat grid */}
-            <div style={{ overflowX: 'auto', paddingBottom: '1rem' }}>
-              {ALL_ROWS.map(row => {
-                const R = seats.filter(s => s.row === row && s.block === 'R');
-                const M = seats.filter(s => s.row === row && s.block === 'M');
-                const L = seats.filter(s => s.row === row && s.block === 'L');
-                return (
-                  <div key={row} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginBottom: 6 }}>
-                    <span style={{ width: 22, textAlign: 'right', color: dim, fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>{row}</span>
-                    <div style={{ display: 'flex', gap: 4 }}>{R.map(s => <SeatBtn key={s.id} seat={s} />)}</div>
-                    <div style={{ display: 'flex', gap: 4 }}>{M.map(s => <SeatBtn key={s.id} seat={s} />)}</div>
-                    <div style={{ display: 'flex', gap: 4 }}>{L.map(s => <SeatBtn key={s.id} seat={s} />)}</div>
-                    <span style={{ width: 22, textAlign: 'left', color: dim, fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>{row}</span>
-                  </div>
-                );
-              })}
+            {/* Seat grid — mobile optimized horizontal scroll */}
+            <div style={{ overflowX: 'auto', overflowY: 'hidden', paddingBottom: '1.5rem', marginBottom: '1rem', WebkitOverflowScrolling: 'touch', scrollBehavior: 'smooth', msOverflowStyle: 'none', scrollbarWidth: 'thin' }}>
+              <div style={{ display: 'inline-flex', flexDirection: 'column', minWidth: 'fit-content' }}>
+                {ALL_ROWS.map(row => {
+                  const R = seats.filter(s => s.row === row && s.block === 'R');
+                  const M = seats.filter(s => s.row === row && s.block === 'M');
+                  const L = seats.filter(s => s.row === row && s.block === 'L');
+                  return (
+                    <div key={row} style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '0.8rem', marginBottom: 6, whiteSpace: 'nowrap' }}>
+                      <span style={{ width: 22, textAlign: 'right', color: dim, fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>{row}</span>
+                      <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>{R.map(s => <SeatBtn key={s.id} seat={s} />)}</div>
+                      <div style={{ display: 'flex', gap: 3, flexShrink: 0, marginLeft: 4 }}>{M.map(s => <SeatBtn key={s.id} seat={s} />)}</div>
+                      <div style={{ display: 'flex', gap: 3, flexShrink: 0, marginLeft: 4 }}>{L.map(s => <SeatBtn key={s.id} seat={s} />)}</div>
+                      <span style={{ width: 22, textAlign: 'left', color: dim, fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>{row}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Legend */}
