@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { MessageCircle, Clock, CheckCircle, XCircle, ChevronLeft } from 'lucide-react';
 
 const ADMIN_PASSWORD = 'peterpan2025';
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzughNZylOlV2NTKfkt3WNrcfcbWPaDBvVeH0osmrkwp51tLuOESqe4Ss1hk42RNFuD/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbycEnpVw4ouFjDKrOSM7pkzXtZw2_CVZrGddnvQ3qYe9kDM6qsQVRg4XH5bu-aIVQkm/exec';
 
 const SHOW_DATES: Record<number, string> = {
   1: 'Jun 26 · 6:00 PM',
