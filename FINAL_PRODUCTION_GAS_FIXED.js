@@ -1,13 +1,11 @@
 // ============================================================================
-// PETER PAN BALLET BOOKING SYSTEM - GOOGLE APPS SCRIPT (PRODUCTION)
+// PETER PAN BALLET BOOKING SYSTEM - GOOGLE APPS SCRIPT (FIXED PRODUCTION)
 // ============================================================================
-// Features:
-// - Show-specific sheet routing (Show1-Show5)
-// - 15-minute seat hold timer
-// - 6-seat limit per booking
-// - Status column (I) with dropdown: Pending (extends 15min) / Confirmed (locks)
-// - All columns locked from manual editing except Status (I)
-// - Automatic seat expiration after hold time
+// Fixes:
+// 1. Added LockService to prevent concurrent booking race conditions.
+// 2. Added server-side seat availability validation before submission.
+// 3. Prevented internal duplicate seat selection in a single booking.
+// 4. Added support for up to 6 seats (matching frontend limit).
 // ============================================================================
 
 const SPREADSHEET_ID = 'YOUR_GOOGLE_SHEET_ID_HERE'; // REPLACE WITH YOUR SHEET ID
@@ -15,13 +13,18 @@ const TICKET_PRICE = 500;
 const HOLD_DURATION = 15 * 60; // 15 minutes in seconds
 
 // ============================================================================
-// INITIAL SETUP - RUN THIS ONCE
+// INITIAL SETUP - RUN THIS ONCE OR AFTER UPDATING SEAT LIMITS
 // ============================================================================
 function setupProductionSheets() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const headers = ['Timestamp', 'Code', 'Primary Guest', 'Phone', 'Show', 'Total Seats', 'Total Price (EGP)', 'Payment Method', 'Status', 'Branch', 'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4', 'Seat 5', 'Seat 1 Guest', 'Seat 2 Guest', 'Seat 3 Guest', 'Seat 4 Guest', 'Seat 5 Guest'];
+  // Updated headers to include Seat 6 and Seat 6 Guest
+  const headers = [
+    'Timestamp', 'Code', 'Primary Guest', 'Phone', 'Show', 'Total Seats', 'Total Price (EGP)', 
+    'Payment Method', 'Status', 'Branch', 
+    'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4', 'Seat 5', 'Seat 6',
+    'Seat 1 Guest', 'Seat 2 Guest', 'Seat 3 Guest', 'Seat 4 Guest', 'Seat 5 Guest', 'Seat 6 Guest'
+  ];
 
-  // Create/verify all sheets
   const sheetNames = ['Show1', 'Show2', 'Show3', 'Show4', 'Show5', 'Pending'];
   
   for (const name of sheetNames) {
@@ -30,12 +33,10 @@ function setupProductionSheets() {
       sheet = ss.insertSheet(name);
     }
     
-    // Add headers if sheet is empty
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(headers);
-    }
+    // Update headers
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     
-    // Remove all existing protections
+    // Remove all existing protections to reset
     const protections = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
     for (const protection of protections) {
       if (protection.canEdit()) {
@@ -44,45 +45,33 @@ function setupProductionSheets() {
     }
     
     // Protect all columns EXCEPT Status (I)
-    // Strategy: Protect columns A-H and J-T (everything except I)
-    const lastColumn = sheet.getLastColumn();
+    const range1 = sheet.getRange('A:H');
+    const protection1 = range1.protect();
+    protection1.setDescription('Protected - data entry restricted');
+    protection1.removeEditors(protection1.getEditors());
+    protection1.addEditor(Session.getEffectiveUser());
     
-    // Protect A-H (columns 1-8)
-    if (lastColumn >= 8) {
-      const range1 = sheet.getRange('A:H');
-      const protection1 = range1.protect();
-      protection1.setDescription('Protected - data entry restricted');
-      protection1.removeEditors(protection1.getEditors());
-      protection1.addEditor(Session.getEffectiveUser());
-    }
-    
-    // Protect J onwards (column 10+)
-    if (lastColumn >= 10) {
-      const range2 = sheet.getRange('J:Z');
-      const protection2 = range2.protect();
-      protection2.setDescription('Protected - data entry restricted');
-      protection2.removeEditors(protection2.getEditors());
-      protection2.addEditor(Session.getEffectiveUser());
-    }
-    
-    // Column I (Status) is unprotected - can be edited by anyone
-    Logger.log(`✅ ${name}: Protected (only Status/Column I editable)`);
+    const range2 = sheet.getRange('J:V'); // Up to column V (Seat 6 Guest)
+    const protection2 = range2.protect();
+    protection2.setDescription('Protected - data entry restricted');
+    protection2.removeEditors(protection2.getEditors());
+    protection2.addEditor(Session.getEffectiveUser());
     
     // Add data validation to Status column (I)
-    const lastRow = Math.max(1000, sheet.getLastRow()); // Validate up to row 1000
+    const lastRow = Math.max(1000, sheet.getLastRow());
     const statusValidation = SpreadsheetApp.newDataValidation()
       .requireValueInList(['Pending', 'Confirmed', 'Cancelled'], true)
       .setAllowInvalid(false)
-      .setHelpText('Select: Pending (extends 15min) or Confirmed (locks) or Cancelled (releases)')
+      .setHelpText('Select: Pending, Confirmed, or Cancelled')
       .build();
     sheet.getRange(`I2:I${lastRow}`).setDataValidation(statusValidation);
   }
   
-  Logger.log('✅ Production sheets initialized with protection - Status column only editable');
+  Logger.log('✅ Production sheets initialized with 6-seat support and protection.');
 }
 
 // ============================================================================
-// MAIN HANDLER - Receives requests from frontend
+// MAIN HANDLER
 // ============================================================================
 function doPost(e) {
   try {
@@ -107,11 +96,9 @@ function doPost(e) {
 function doGet(e) {
   try {
     const action = e.parameter.action;
-    
     if (action === 'getSeats') return handleGetSeats(e.parameter);
     if (action === 'getPending') return handleGetPending();
     if (action === 'getSummary') return handleGetSummary(e.parameter);
-    
     return error('Unknown action');
   } catch (e) {
     return error(e.message);
@@ -119,84 +106,111 @@ function doGet(e) {
 }
 
 // ============================================================================
-// GET SHOW NAME - Helper to get display name for show number
-// ============================================================================
-function getShowName(showNumber) {
-  const showNames = {
-    1: 'Peter Pan Cast 1 (Friday 1:30 PM)',
-    2: 'Peter Pan Cast 2 (Friday 6:00 PM)',
-    3: 'Peter Pan Cast 3 (Saturday 12:00 PM)',
-    4: 'Contemporary SURVIVAL 1 (Saturday 6:00 PM)',
-    5: 'Contemporary SURVIVAL 2 (Saturday 8:00 PM)'
-  };
-  return showNames[showNumber] || `Show ${showNumber}`;
-}
-
-// ============================================================================
-// SUBMIT BOOKING - Create new booking with 15-minute hold
+// SUBMIT BOOKING - WITH LOCK AND VALIDATION
 // ============================================================================
 function handleSubmit(data) {
-  const showNumber = parseInt(data.showNumber);
-  const sheetName = `Show${showNumber}`;
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(sheetName);
-  
-  if (!sheet) return error(`Show ${showNumber} sheet not found`);
-  
-  // Validate
-  const seatsCount = (data.seats || []).length;
-  if (seatsCount === 0 || seatsCount > 6) return error('Invalid seat count (1-6)');
-  
-  // Generate booking code
-  const code = generateBookingCode();
-  const now = new Date();
-  const timestamp = Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy HH:mm:ss');
-  
-  // Calculate hold expiration (15 minutes from now)
-  const expiresAt = new Date(now.getTime() + HOLD_DURATION * 1000);
-  
-  // Build row
-  const row = [
-    timestamp,
-    code,
-    data.primaryGuest || '',
-    data.phone || '',
-    showNumber,
-    seatsCount,
-    seatsCount * TICKET_PRICE,
-    data.paymentMethod || 'InstaPay',
-    'Pending',  // Status column starts as Pending
-    data.branch || 'Maadi',
-    ...(data.seats || []).slice(0, 5),
-    ...Array(5 - Math.min(5, seatsCount)).fill(''),
-    ...(data.seatGuests || []).slice(0, 5),
-    ...Array(5 - Math.min(5, (data.seatGuests || []).length)).fill('')
-  ];
-  
-  sheet.appendRow(row);
-  
-  // Also add to Pending sheet
-  const pendingSheet = ss.getSheetByName('Pending');
-  const pendingRow = row.slice(0, 10); // First 10 columns
-  pendingSheet.appendRow(pendingRow);
-  
-  // Create WhatsApp message with booking details pre-filled (Arabic)
-  const totalPrice = seatsCount * TICKET_PRICE;
-  const whatsappMessage = `كود الحجز: ${code} | الاسم: ${data.primaryGuest} | المقاعد: ${seatsCount} | المبلغ: ${totalPrice} جنيه`;
-  const whatsappLink = `https://wa.me/20${data.phone}?text=${encodeURIComponent(whatsappMessage)}`;
-  
-  return success({
-    code,
-    totalPrice,
-    totalSeats: seatsCount,
-    whatsappLink,
-    expiresAt: expiresAt.toISOString(),
-    message: whatsappMessage
-  });
+  const lock = LockService.getScriptLock();
+  try {
+    // Try to get the lock for 30 seconds
+    lock.waitLock(30000);
+    
+    const showNumber = parseInt(data.showNumber);
+    const sheetName = `Show${showNumber}`;
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(sheetName);
+    
+    if (!sheet) return error(`Show ${showNumber} sheet not found`);
+    
+    const requestedSeats = (data.seats || []).map(s => String(s).trim()).filter(s => s);
+    const seatsCount = requestedSeats.length;
+    
+    if (seatsCount === 0 || seatsCount > 6) return error('Invalid seat count (1-6)');
+
+    // 1. Check for internal duplicates in the request
+    const uniqueRequestedSeats = [...new Set(requestedSeats)];
+    if (uniqueRequestedSeats.length !== requestedSeats.length) {
+      return error('Duplicate seats found in your selection.');
+    }
+
+    // 2. Check if any requested seat is already taken (Confirmed or Active Pending)
+    const rows = sheet.getDataRange().getValues();
+    const takenSeats = new Set();
+    
+    for (let i = 1; i < rows.length; i++) {
+      const status = rows[i][8]; // Column I
+      if (status === 'Cancelled') continue;
+      
+      const timestamp = rows[i][0];
+      if (status === 'Pending' && !isWithinHoldWindow(timestamp)) continue;
+
+      // Check Seat 1 to Seat 6 (Columns K to P, indices 10 to 15)
+      const currentBookingSeats = rows[i].slice(10, 16);
+      currentBookingSeats.forEach(s => {
+        if (s) takenSeats.add(String(s).trim());
+      });
+    }
+
+    const alreadyTaken = requestedSeats.filter(s => takenSeats.has(s));
+    if (alreadyTaken.length > 0) {
+      return error(`Sorry, the following seats were just taken: ${alreadyTaken.join(', ')}`);
+    }
+
+    // 3. All clear, proceed with booking
+    const code = generateBookingCode();
+    const now = new Date();
+    const timestamp = Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy HH:mm:ss');
+    const expiresAt = new Date(now.getTime() + HOLD_DURATION * 1000);
+    
+    const row = [
+      timestamp,
+      code,
+      data.primaryGuest || '',
+      data.phone || '',
+      showNumber,
+      seatsCount,
+      seatsCount * TICKET_PRICE,
+      data.paymentMethod || 'InstaPay',
+      'Pending',
+      data.branch || 'Maadi',
+      // Seats 1-6 (Columns K-P)
+      ...requestedSeats.slice(0, 6),
+      ...Array(6 - Math.min(6, seatsCount)).fill(''),
+      // Guest names 1-6 (Columns Q-V)
+      ...(data.seatGuests || []).slice(0, 6),
+      ...Array(6 - Math.min(6, (data.seatGuests || []).length)).fill('')
+    ];
+    
+    sheet.appendRow(row);
+    
+    // Update Pending sheet
+    const pendingSheet = ss.getSheetByName('Pending');
+    if (pendingSheet) {
+      pendingSheet.appendRow(row.slice(0, 10));
+    }
+    
+    const totalPrice = seatsCount * TICKET_PRICE;
+    const whatsappMessage = `كود الحجز: ${code} | الاسم: ${data.primaryGuest} | المقاعد: ${seatsCount} | المبلغ: ${totalPrice} جنيه`;
+    const whatsappLink = `https://wa.me/20${data.phone}?text=${encodeURIComponent(whatsappMessage)}`;
+    
+    return success({
+      code,
+      totalPrice,
+      totalSeats: seatsCount,
+      whatsappLink,
+      expiresAt: expiresAt.toISOString(),
+      message: whatsappMessage
+    });
+
+  } catch (e) {
+    Logger.log('[ERROR] handleSubmit: ' + e.message);
+    return error('Server busy or error: ' + e.message);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ============================================================================
-// GET BOOKED SEATS - Show which seats are held/booked
+// GET BOOKED SEATS
 // ============================================================================
 function handleGetSeats(data) {
   const showNumber = parseInt(data.showNumber || data.show);
@@ -207,205 +221,127 @@ function handleGetSeats(data) {
   if (!sheet) return error(`Sheet not found`);
   
   const rows = sheet.getDataRange().getValues();
-  const confirmed = [];
-  const pending = [];
-  const blocked = [];
+  const confirmed = new Set();
+  const pending = new Set();
   
-  // Skip header, process data rows
   for (let i = 1; i < rows.length; i++) {
-    const status = rows[i][8]; // Column I (Status)
-    const seatsData = rows[i].slice(10, 15); // Columns K-O (Seat 1-5)
+    const status = rows[i][8];
+    if (status === 'Cancelled') continue;
     
+    const seatsData = rows[i].slice(10, 16).filter(s => s);
     if (status === 'Confirmed') {
-      confirmed.push(...seatsData.filter(s => s));
+      seatsData.forEach(s => confirmed.add(s));
     } else if (status === 'Pending') {
-      const timestamp = rows[i][0];
-      if (isWithinHoldWindow(timestamp)) {
-        pending.push(...seatsData.filter(s => s));
+      if (isWithinHoldWindow(rows[i][0])) {
+        seatsData.forEach(s => pending.add(s));
       }
-    } else if (status === 'Cancelled') {
-      // Don't add cancelled seats to any list
     }
   }
   
   return success({ 
-    confirmed: [...new Set(confirmed)], 
-    pending: [...new Set(pending)],
-    blocked: [...new Set(blocked)]
+    confirmed: Array.from(confirmed), 
+    pending: Array.from(pending),
+    blocked: []
   });
 }
 
 // ============================================================================
-// GET PENDING BOOKINGS - For admin panel
+// OTHER HANDLERS (ADMIN)
 // ============================================================================
 function handleGetPending() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const pendingSheet = ss.getSheetByName('Pending');
-  
   if (!pendingSheet) return error('Pending sheet not found');
-  
   const rows = pendingSheet.getDataRange().getValues();
-  const bookings = [];
-  
-  // Skip header
-  for (let i = 1; i < rows.length; i++) {
-    bookings.push({
-      code: rows[i][1],
-      guest: rows[i][2],
-      phone: rows[i][3],
-      show: rows[i][4],
-      seats: rows[i][5],
-      price: rows[i][6],
-      payment: rows[i][7],
-      status: rows[i][8],
-      branch: rows[i][9]
-    });
-  }
-  
+  const bookings = rows.slice(1).map(r => ({
+    code: r[1], guest: r[2], phone: r[3], show: r[4],
+    seats: r[5], price: r[6], payment: r[7], status: r[8], branch: r[9]
+  }));
   return success({ bookings });
 }
 
-// ============================================================================
-// CONFIRM BOOKING - Lock seats and update status
-// ============================================================================
 function handleConfirm(data) {
-  const code = data.code;
-  const showNumber = data.showNumber;
-  const sheetName = `Show${showNumber}`;
-  
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(sheetName);
-  const pendingSheet = ss.getSheetByName('Pending');
-  
-  // Find and update in show sheet
+  const sheet = ss.getSheetByName(`Show${data.showNumber}`);
   const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][1] === code) {
-      sheet.getRange(i + 1, 9).setValue('Confirmed'); // Status column
+    if (rows[i][1] === data.code) {
+      sheet.getRange(i + 1, 9).setValue('Confirmed');
       break;
     }
   }
-  
-  // Remove from Pending sheet
-  const pendingRows = pendingSheet.getDataRange().getValues();
-  for (let i = pendingRows.length - 1; i >= 1; i--) {
-    if (pendingRows[i][1] === code) {
-      pendingSheet.deleteRow(i + 1);
-      break;
-    }
+  const pendingSheet = ss.getSheetByName('Pending');
+  const pRows = pendingSheet.getDataRange().getValues();
+  for (let i = pRows.length - 1; i >= 1; i--) {
+    if (pRows[i][1] === data.code) { pendingSheet.deleteRow(i + 1); break; }
   }
-  
-  return success({ message: 'Booking confirmed and seats locked' });
+  return success({ message: 'Confirmed' });
 }
 
-// ============================================================================
-// CANCEL BOOKING - Release seats
-// ============================================================================
 function handleCancel(data) {
-  const code = data.code;
-  const showNumber = data.showNumber;
-  const sheetName = `Show${showNumber}`;
-  
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(sheetName);
-  const pendingSheet = ss.getSheetByName('Pending');
-  
-  // Mark as Cancelled in show sheet
+  const sheet = ss.getSheetByName(`Show${data.showNumber}`);
   const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][1] === code) {
+    if (rows[i][1] === data.code) {
       sheet.getRange(i + 1, 9).setValue('Cancelled');
       break;
     }
   }
-  
-  // Remove from Pending sheet
-  const pendingRows = pendingSheet.getDataRange().getValues();
-  for (let i = pendingRows.length - 1; i >= 1; i--) {
-    if (pendingRows[i][1] === code) {
-      pendingSheet.deleteRow(i + 1);
-      break;
-    }
+  const pendingSheet = ss.getSheetByName('Pending');
+  const pRows = pendingSheet.getDataRange().getValues();
+  for (let i = pRows.length - 1; i >= 1; i--) {
+    if (pRows[i][1] === data.code) { pendingSheet.deleteRow(i + 1); break; }
   }
-  
-  return success({ message: 'Booking cancelled and seats released' });
+  return success({ message: 'Cancelled' });
 }
 
-// ============================================================================
-// SEARCH BOOKING - Find by code or phone
-// ============================================================================
 function handleSearch(data) {
   const query = data.query.toLowerCase();
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const shows = ['Show1', 'Show2', 'Show3', 'Show4', 'Show5'];
   const results = [];
-  
-  for (const showName of shows) {
-    const sheet = ss.getSheetByName(showName);
-    const rows = sheet.getDataRange().getValues();
-    
-    for (let i = 1; i < rows.length; i++) {
-      const code = rows[i][1];
-      const phone = rows[i][3];
-      if (code.toLowerCase().includes(query) || phone.includes(query)) {
-        results.push({
-          code, guest: rows[i][2], phone, show: rows[i][4],
-          seats: rows[i][5], status: rows[i][8]
-        });
+  ['Show1', 'Show2', 'Show3', 'Show4', 'Show5'].forEach(name => {
+    const rows = ss.getSheetByName(name).getDataRange().getValues();
+    rows.slice(1).forEach(r => {
+      if (r[1].toLowerCase().includes(query) || String(r[3]).includes(query)) {
+        results.push({ code: r[1], guest: r[2], phone: r[3], show: r[4], seats: r[5], status: r[8] });
       }
-    }
-  }
-  
+    });
+  });
   return success({ results });
 }
 
-// ============================================================================
-// GET SUMMARY - Stats for each show
-// ============================================================================
 function handleGetSummary(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const summary = {};
-  
   for (let i = 1; i <= 5; i++) {
-    const sheet = ss.getSheetByName(`Show${i}`);
-    const rows = sheet.getDataRange().getValues();
-    
-    let confirmed = 0, pending = 0, cancelled = 0;
-    for (let j = 1; j < rows.length; j++) {
-      const status = rows[j][8];
-      if (status === 'Confirmed') confirmed++;
-      else if (status === 'Pending') pending++;
-      else if (status === 'Cancelled') cancelled++;
-    }
-    
-    summary[`Show${i}`] = { confirmed, pending, cancelled };
+    const rows = ss.getSheetByName(`Show${i}`).getDataRange().getValues();
+    let c = 0, p = 0, x = 0;
+    rows.slice(1).forEach(r => {
+      if (r[8] === 'Confirmed') c++;
+      else if (r[8] === 'Pending') p++;
+      else if (r[8] === 'Cancelled') x++;
+    });
+    summary[`Show${i}`] = { confirmed: c, pending: p, cancelled: x };
   }
-  
   return success({ summary });
 }
 
 // ============================================================================
-// HELPER FUNCTIONS
+// HELPERS
 // ============================================================================
-
 function generateBookingCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = 'MAD-';
-  for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
+  for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
   return code;
 }
 
 function isWithinHoldWindow(timestamp) {
   try {
-    const bookingTime = new Date(timestamp);
-    const now = new Date();
-    const diffSeconds = (now - bookingTime) / 1000;
-    return diffSeconds < HOLD_DURATION;
-  } catch {
-    return false;
-  }
+    const diff = (new Date() - new Date(timestamp)) / 1000;
+    return diff < HOLD_DURATION;
+  } catch { return false; }
 }
 
 function success(data) {
