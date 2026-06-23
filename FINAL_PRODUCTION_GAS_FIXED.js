@@ -8,7 +8,7 @@
 // 4. Added support for up to 6 seats (matching frontend limit).
 // ============================================================================
 
-const SPREADSHEET_ID = 'YOUR_GOOGLE_SHEET_ID_HERE'; // REPLACE WITH YOUR SHEET ID
+const SPREADSHEET_ID = '1vSmOyJ_I6802WD-v6yeGbI6R3Oe6myPTImuFlIgFIAw'; // REPLACE WITH YOUR SHEET ID
 const TICKET_PRICE = 500;
 const HOLD_DURATION = 15 * 60; // 15 minutes in seconds
 
